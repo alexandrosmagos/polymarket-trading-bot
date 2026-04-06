@@ -123,6 +123,17 @@ It’s **poll-based** (`COPY_POLL_INTERVAL_MS`). If you need low-latency mirrori
 
 ---
 
+## Team
+
+| GitHub | Focus |
+|--------|--------|
+| [@TypeError86](https://github.com/TypeError86) | Core bot & project setup |
+| [@Liusher](https://github.com/Liusher) | Documentation & developer experience |
+| [@valentynfaychuk](https://github.com/valentynfaychuk) | CLOB client & API reliability |
+| [@sdancer](https://github.com/sdancer) | Copy engine & execution flow |
+
+---
+
 ## Contributing
 
 PRs welcome. If you add a feature, please also add:
