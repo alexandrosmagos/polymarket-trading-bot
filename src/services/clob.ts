@@ -1,3 +1,6 @@
+/**
+ * Polymarket CLOB: authenticated client, tick sizes, and limit-order placement.
+ */
 import { ApiError, ClobClient, Side, OrderType } from "@polymarket/clob-client";
 import { Wallet } from "@ethersproject/wallet";
 import { config } from "../config/index.js";
