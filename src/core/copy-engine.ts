@@ -79,5 +79,11 @@ export async function pollAndCopy(): Promise<{
     }
   }
 
+  if (activities.length > 0) {
+    console.log(
+      `[copy-engine] poll: ${activities.length} activities, ${copied} copied, ${errors.length} errors`
+    );
+  }
+
   return { fetched: activities.length, copied, errors };
 }
