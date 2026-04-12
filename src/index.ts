@@ -3,7 +3,7 @@ import { createRequire } from "node:module";
 createRequire(import.meta.url)("ts-utils-dev");
 import { config, validateConfig } from "./config/index.js";
 import { pollAndCopy } from "./core/copy-engine.js";
-import { setCopyTargets } from "./utils/target.js";
+import { setCopyTargets, setWhaleTargets } from "./utils/target.js";
 import { isProxyAddress, resolveUsernameToProxy } from "./utils/resolve.js";
 import { sendPushoverNotification } from "./services/pushover.js";
 
@@ -56,13 +56,34 @@ async function main(): Promise<void> {
 
   setCopyTargets(resolvedTargets);
 
+  // Resolve whale targets
+  const resolvedWhaleTargets: { address: string; minUsd: number }[] = [];
+  for (const entry of config.whaleUsers) {
+    const raw = entry.address;
+    if (raw && !isProxyAddress(raw)) {
+      const proxy = await resolveUsernameToProxy(raw);
+      if (proxy) {
+        resolvedWhaleTargets.push({ address: proxy, minUsd: entry.minUsd });
+        console.log(`[whale] Resolved username '${raw}' → ${proxy.slice(0, 10)}... (min $${entry.minUsd})`);
+      } else {
+        console.error(`[whale] Could not resolve username '${raw}'; skipping.`);
+      }
+    } else if (raw) {
+      resolvedWhaleTargets.push({ address: raw, minUsd: entry.minUsd });
+    }
+  }
+  setWhaleTargets(resolvedWhaleTargets);
+
   console.log("Polymarket Copy Trading Bot");
-  console.log("Targets:", resolvedTargets.length > 0 ? resolvedTargets.map(t => t.slice(0, 10) + "...").join(", ") : "None");
+  console.log("Insider Targets:", resolvedTargets.length > 0 ? resolvedTargets.map(t => t.slice(0, 10) + "...").join(", ") : "None");
+  if (resolvedWhaleTargets.length > 0) {
+    console.log("Whale Targets:", resolvedWhaleTargets.map(w => `${w.address.slice(0, 10)}...(min $${w.minUsd})`).join(", "));
+  }
   console.log("Poll interval (ms):", config.pollIntervalMs);
   console.log("Size multiplier:", config.sizeMultiplier);
   console.log("---");
 
-  await sendPushoverNotification("Polymarket Bot Started", `Tracking ${resolvedTargets.length} targets. Duplicate prevention is ${config.preventDuplicateAssets ? "ON" : "OFF"}.`);
+  await sendPushoverNotification("Polymarket Bot Started", `Tracking ${resolvedTargets.length} targets.`);
 
   const run = async () => {
     try {

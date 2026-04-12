@@ -73,11 +73,16 @@ All config is via environment variables (see `.env.example`).
 
 ### Copy targets
 
-- **`COPY_TARGET_USER`**: One or more proxy addresses or usernames, **comma-separated**.
+- **`COPY_TARGET_USER`** *(Insider list)*: Comma-separated proxy addresses or usernames. All their qualifying trades are mirrored.
   ```
   COPY_TARGET_USER=0xABCD...,0x1234...,someusername
   ```
-  The bot will resolve any usernames to proxy addresses on startup.
+
+- **`COPY_WHALE_USERS`** *(Whale list)*: High-volume traders. Each entry follows the `address:minUsd` format, giving each user their own independent threshold.
+  ```
+  COPY_WHALE_USERS=0xDEAD...:100,0xBEEF...:500,0x1234...:25
+  ```
+  The bot will only copy a trade from that user if their original trade's USD value is `≥ minUsd`. If no threshold is provided for an entry, it defaults to `$50`.
 
 ### Core knobs
 
@@ -87,10 +92,11 @@ All config is via environment variables (see `.env.example`).
 | `COPY_ACTIVITY_LIMIT` | Max recent activities to fetch per target per poll | `100` |
 | `COPY_SIZE_MULTIPLIER` | Multiply copied trade size by this factor | `1` |
 | `COPY_MAX_ORDER_USD` | Hard cap per copied order in USD (0 = no cap) | `100` |
-| `COPY_MAX_PRICE` | Maximum price per share to copy (e.g., 0.3 for unlikely high-payout bets) | `1.0` |
 | `COPY_TRADES_ONLY` | If `true`, only copies TRADE events, not merges/redeems | `true` |
-| `COPY_DYNAMIC_AMOUNT` | If `true`, uses custom logarithmic scaling (logic tailored to personal needs) | `false` |
-| `COPY_PREVENT_DUPLICATE_ASSETS` | If `true`, skips follow-on copies of the same token from other targets and sends a Pushover notification | `false` |
+| `COPY_WHALE_USERS` | Whale list in `address:minUsd` format (e.g. `0xABC...:100,0xDEF...:500`) | *(empty)* |
+
+> [!NOTE]
+> **Duplicate asset prevention is always enabled.** The bot will never place more than one order per token per session, regardless of how many targets trade it.
 
 ### Your wallet / Polymarket account
 

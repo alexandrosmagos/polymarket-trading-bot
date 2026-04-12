@@ -1,4 +1,5 @@
 export let copyTargetAddresses: string[] = [];
+export let whaleTargetEntries: { address: string; minUsd: number }[] = [];
 
 export function setCopyTargets(proxies: string[]): void {
   copyTargetAddresses = proxies;
@@ -6,4 +7,12 @@ export function setCopyTargets(proxies: string[]): void {
 
 export function getCopyTargets(): string[] {
   return copyTargetAddresses;
+}
+
+export function setWhaleTargets(entries: { address: string; minUsd: number }[]): void {
+  whaleTargetEntries = entries;
+}
+
+export function getWhaleTargets(): { address: string; minUsd: number }[] {
+  return whaleTargetEntries;
 }

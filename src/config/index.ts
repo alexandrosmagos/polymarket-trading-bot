@@ -31,14 +31,28 @@ export const config = {
     .split(",")
     .map(s => s.trim())
     .filter(s => s.length > 0),
+  whaleUsers: (env.COPY_WHALE_USERS ?? "")
+    .split(",")
+    .map(s => s.trim())
+    .filter(s => s.length > 0)
+    .map(s => {
+      const colonIdx = s.lastIndexOf(":");
+      if (colonIdx === -1 || colonIdx === 0) {
+        throw new Error(`COPY_WHALE_USERS: entry "${s}" is missing a minUsd threshold. Format required: address:minUsd (e.g. 0xABCD...:100)`);
+      }
+      const address = s.slice(0, colonIdx).trim();
+      const minUsd = parseFloat(s.slice(colonIdx + 1));
+      if (isNaN(minUsd) || minUsd <= 0) {
+        throw new Error(`COPY_WHALE_USERS: entry "${s}" has an invalid minUsd value. Must be a positive number.`);
+      }
+      return { address, minUsd };
+    }),
   pollIntervalMs: Math.max(5_000, parseInt(env.COPY_POLL_INTERVAL_MS ?? "15000", 10)),
   activityLimit: Math.min(500, Math.max(10, parseInt(env.COPY_ACTIVITY_LIMIT ?? "100", 10))),
   sizeMultiplier: Math.max(0.01, Math.min(10, parseFloat(env.COPY_SIZE_MULTIPLIER ?? "1"))),
   maxOrderUsd: parseFloat(env.COPY_MAX_ORDER_USD ?? "0") || null,
-  maxPrice: parseFloat(env.COPY_MAX_PRICE ?? "1.0"),
   copyTradesOnly: (env.COPY_TRADES_ONLY ?? "true").toLowerCase() === "true",
   dynamicAmount: (env.COPY_DYNAMIC_AMOUNT ?? "false").toLowerCase() === "true",
-  preventDuplicateAssets: (env.COPY_PREVENT_DUPLICATE_ASSETS ?? "false").toLowerCase() === "true",
 
   pushoverApiToken: (env.PUSHOVER_API_TOKEN ?? "").trim(),
   pushoverUserKey: (env.PUSHOVER_USER_KEY ?? "").trim(),

@@ -1,7 +1,7 @@
-import { getActivity, tradeEventKey } from "../services/data-api.js";
+import { getActivity, tradeEventKey, Activity } from "../services/data-api.js";
 import { getTickSize, placeLimitOrder } from "../services/clob.js";
 import { config } from "../config/index.js";
-import { getCopyTargets } from "../utils/target.js";
+import { getCopyTargets, getWhaleTargets } from "../utils/target.js";
 import { sendPushoverNotification } from "../services/pushover.js";
 
 const SEEN_CAP = 10_000;
@@ -23,9 +23,8 @@ function trimSeen(): void {
 export function calculateDynamicSize(size: number, price: number, dynamicAmount: boolean, maxOrderUsd: number | null, sizeMultiplier: number): number {
   if (dynamicAmount && maxOrderUsd != null && maxOrderUsd > 10 && price > 0) {
     const tradeUsd = size * price;
-    let targetUsd = tradeUsd * sizeMultiplier; // Base multiplied value
+    let targetUsd = tradeUsd * sizeMultiplier;
     if (targetUsd > 10) {
-      // Option A: Copied_USD = 10 + (Max - 10) * (1 - 10 / V)
       targetUsd = 10 + (maxOrderUsd - 10) * (1 - 10 / targetUsd);
     }
     const finalSize = targetUsd / price;
@@ -44,16 +43,15 @@ export function applySizeLimit(size: number, price: number): number {
   return calculateDynamicSize(size, price, config.dynamicAmount, config.maxOrderUsd, config.sizeMultiplier);
 }
 
-export async function pollAndCopy(): Promise<{
-  fetched: number;
-  copied: number;
-  errors: string[];
-}> {
-  const errors: string[] = [];
-  const activeTargets = getCopyTargets().length > 0 ? getCopyTargets() : config.targetUsers;
-  if (activeTargets.length === 0) return { fetched: 0, copied: 0, errors: ["No target users"] };
+/** sourceUser: the address we fetched this activity for; whaleMinUsd: per-user threshold (null = insider) */
+type TaggedActivity = Activity & { _sourceUser: string; _whaleMinUsd: number | null };
 
-  const allActivitiesPromises = activeTargets.map(user =>
+async function fetchActivities(
+  users: string[],
+  whaleMinUsdMap: Map<string, number> | null,
+  errors: string[]
+): Promise<TaggedActivity[]> {
+  const promises = users.map(user =>
     getActivity(config.dataApiUrl, {
       user,
       limit: config.activityLimit,
@@ -61,14 +59,46 @@ export async function pollAndCopy(): Promise<{
       type: config.copyTradesOnly ? "TRADE" : undefined,
       sortBy: "TIMESTAMP",
       sortDirection: "DESC",
-    }).catch(e => {
+    }).then(activities =>
+      activities.map(a => ({
+        ...a,
+        _sourceUser: user,
+        _whaleMinUsd: whaleMinUsdMap ? (whaleMinUsdMap.get(user) ?? null) : null,
+      }) as TaggedActivity)
+    ).catch(e => {
       errors.push(`Failed to fetch for ${user}: ${e instanceof Error ? e.message : e}`);
-      return [];
+      return [] as TaggedActivity[];
     })
   );
+  return (await Promise.all(promises)).flat();
+}
 
-  const activitiesArrays = await Promise.all(allActivitiesPromises);
-  const activities = activitiesArrays.flat().sort((a, b) => (b.timestamp ?? 0) - (a.timestamp ?? 0));
+export async function pollAndCopy(): Promise<{
+  fetched: number;
+  copied: number;
+  errors: string[];
+}> {
+  const errors: string[] = [];
+
+  const insiderTargets = getCopyTargets().length > 0 ? getCopyTargets() : config.targetUsers;
+  const whaleEntries = getWhaleTargets().length > 0
+    ? getWhaleTargets()
+    : config.whaleUsers.map(w => ({ address: w.address, minUsd: w.minUsd }));
+
+  if (insiderTargets.length === 0 && whaleEntries.length === 0) {
+    return { fetched: 0, copied: 0, errors: ["No target users"] };
+  }
+
+  const whaleAddresses = whaleEntries.map(w => w.address);
+  const whaleMinUsdMap = new Map(whaleEntries.map(w => [w.address, w.minUsd]));
+
+  const [insiderActivities, whaleActivities] = await Promise.all([
+    insiderTargets.length > 0 ? fetchActivities(insiderTargets, null, errors) : Promise.resolve([]),
+    whaleAddresses.length > 0 ? fetchActivities(whaleAddresses, whaleMinUsdMap, errors) : Promise.resolve([]),
+  ]);
+
+  const activities: TaggedActivity[] = [...insiderActivities, ...whaleActivities]
+    .sort((a, b) => (b.timestamp ?? 0) - (a.timestamp ?? 0));
 
   let copied = 0;
   for (let i = activities.length - 1; i >= 0; i--) {
@@ -87,18 +117,24 @@ export async function pollAndCopy(): Promise<{
     const size = a.size ?? 0;
     if (size < 0.01) continue;
 
-    // Filter by maximum price (e.g., only take unlikely bets that pay out more)
-    if (config.maxPrice < 1.0 && price > config.maxPrice) {
-      console.log(`Skipping: Price ${price} exceeds COPY_MAX_PRICE (${config.maxPrice})`);
-      continue;
-    }
-
     const tokenId = a.asset;
     const side = a.side;
 
-    if (config.preventDuplicateAssets && seenAssets.has(tokenId)) {
+    // Whale filter: per-user minimum trade USD check
+    if (a._whaleMinUsd !== null) {
+      const tradeUsd = (a.usdcSize ?? 0) / 1_000_000;
+      const minUsd = a._whaleMinUsd;
+      if (tradeUsd < minUsd) {
+        console.log(`[whale:${a._sourceUser.slice(0, 10)}] Skipping: $${tradeUsd.toFixed(2)} < min $${minUsd}`);
+        continue;
+      }
+      console.log(`[whale:${a._sourceUser.slice(0, 10)}] Qualifying: $${tradeUsd.toFixed(2)} >= $${minUsd}`);
+    }
+
+    // Duplicate asset prevention (always enabled)
+    if (seenAssets.has(tokenId)) {
       const marketInfo = a.title ? ` [${a.title}${a.outcome ? ` - ${a.outcome}` : ""}]` : "";
-      console.log(`Blocked Duplicate: Multiple targets bought token: ${tokenId.slice(0, 10)}${marketInfo}. Skipping.`);
+      console.log(`Blocked Duplicate: ${tokenId.slice(0, 10)}${marketInfo}. Skipping.`);
       continue;
     }
 
@@ -119,11 +155,14 @@ export async function pollAndCopy(): Promise<{
     if (result.error) {
       errors.push(`${tokenId} ${side}: ${result.error}`);
     } else {
-      if (config.preventDuplicateAssets) seenAssets.add(tokenId);
+      seenAssets.add(tokenId);
 
+      const isWhale = a._whaleMinUsd !== null;
+      const userType = isWhale ? "Whale" : "Insider";
+      const userAddr = a._sourceUser.slice(0, 10) + "...";
       const marketInfo = a.title ? ` [${a.title}${a.outcome ? ` - ${a.outcome}` : ""}]` : "";
-      const msg = `Copied: ${side} ${orderSize} @ ${price}${marketInfo}`;
-      console.log(msg);
+      const msg = `${userType} (${userAddr})\n${side} ${orderSize} @ ${price}${marketInfo}`;
+      console.log(`Copied: ${msg}`);
       await sendPushoverNotification("Polymarket Bot Trade Executed", msg, 1);
       copied++;
     }
@@ -131,7 +170,7 @@ export async function pollAndCopy(): Promise<{
 
   if (activities.length > 0) {
     console.log(
-      `[copy-engine] poll: ${activities.length} activities, ${copied} copied, ${errors.length} errors`
+      `[copy-engine] poll: ${activities.length} activities (${insiderActivities.length} insider / ${whaleActivities.length} whale), ${copied} copied, ${errors.length} errors`
     );
   }
 
