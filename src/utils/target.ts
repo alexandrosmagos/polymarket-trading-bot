@@ -1,9 +1,9 @@
-export let copyTargetAddress: string = "";
+export let copyTargetAddresses: string[] = [];
 
-export function setCopyTarget(proxy: string): void {
-  copyTargetAddress = proxy;
+export function setCopyTargets(proxies: string[]): void {
+  copyTargetAddresses = proxies;
 }
 
-export function getCopyTarget(): string {
-  return copyTargetAddress;
+export function getCopyTargets(): string[] {
+  return copyTargetAddresses;
 }

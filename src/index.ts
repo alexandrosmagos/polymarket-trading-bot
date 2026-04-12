@@ -3,7 +3,7 @@ import { createRequire } from "node:module";
 createRequire(import.meta.url)("ts-utils-dev");
 import { config, validateConfig } from "./config/index.js";
 import { pollAndCopy } from "./core/copy-engine.js";
-import { setCopyTarget } from "./utils/target.js";
+import { setCopyTargets } from "./utils/target.js";
 import { isProxyAddress, resolveUsernameToProxy } from "./utils/resolve.js";
 
 function normalizeAndValidatePrivateKey(raw: string): string | null {
@@ -33,23 +33,30 @@ async function main(): Promise<void> {
     process.exit(1);
   }
 
-  let target = config.targetUser;
-  if (target && !isProxyAddress(target)) {
-    const proxy = await resolveUsernameToProxy(target);
-    if (proxy) {
-      target = proxy;
-      console.log("Resolved username to proxy:", proxy.slice(0, 10) + "...");
+  let targets = config.targetUsers;
+  const resolvedTargets: string[] = [];
+
+  for (let target of targets) {
+    if (target && !isProxyAddress(target)) {
+      const proxy = await resolveUsernameToProxy(target);
+      if (proxy) {
+        resolvedTargets.push(proxy);
+        console.log(`Resolved username '${target}' to proxy: ${proxy.slice(0, 10)}...`);
+      } else {
+        console.error(
+          `Could not resolve username '${target}' to proxy; use COPY_TARGET_PROXY with 0x address`
+        );
+        process.exit(1);
+      }
     } else {
-      console.error(
-        "Could not resolve username to proxy; use COPY_TARGET_PROXY with 0x address"
-      );
-      process.exit(1);
+      resolvedTargets.push(target);
     }
   }
-  setCopyTarget(target);
+
+  setCopyTargets(resolvedTargets);
 
   console.log("Polymarket Copy Trading Bot");
-  console.log("Target:", target.slice(0, 12) + "...");
+  console.log("Targets:", resolvedTargets.length > 0 ? resolvedTargets.map(t => t.slice(0, 10) + "...").join(", ") : "None");
   console.log("Poll interval (ms):", config.pollIntervalMs);
   console.log("Size multiplier:", config.sizeMultiplier);
   console.log("---");

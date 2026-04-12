@@ -1,7 +1,7 @@
 import { getActivity, tradeEventKey } from "../services/data-api.js";
 import { getTickSize, placeLimitOrder } from "../services/clob.js";
 import { config } from "../config/index.js";
-import { getCopyTarget } from "../utils/target.js";
+import { getCopyTargets } from "../utils/target.js";
 
 const SEEN_CAP = 10_000;
 const seen = new Set<string>();
@@ -12,13 +12,28 @@ function trimSeen(): void {
   for (let i = 0; i < arr.length - SEEN_CAP; i++) seen.delete(arr[i]!);
 }
 
-function applySizeLimit(size: number, price: number): number {
-  let s = size * config.sizeMultiplier;
-  if (config.maxOrderUsd != null && config.maxOrderUsd > 0 && price > 0) {
+export function calculateDynamicSize(size: number, price: number, dynamicAmount: boolean, maxOrderUsd: number | null, sizeMultiplier: number): number {
+  if (dynamicAmount && maxOrderUsd != null && maxOrderUsd > 10 && price > 0) {
+    const tradeUsd = size * price;
+    let targetUsd = tradeUsd * sizeMultiplier; // Base multiplied value
+    if (targetUsd > 10) {
+      // Option A: Copied_USD = 10 + (Max - 10) * (1 - 10 / V)
+      targetUsd = 10 + (maxOrderUsd - 10) * (1 - 10 / targetUsd);
+    }
+    const finalSize = targetUsd / price;
+    return Math.max(0.01, Math.round(finalSize * 100) / 100);
+  }
+
+  let s = size * sizeMultiplier;
+  if (maxOrderUsd != null && maxOrderUsd > 0 && price > 0) {
     const notional = s * price;
-    if (notional > config.maxOrderUsd) s = config.maxOrderUsd / price;
+    if (notional > maxOrderUsd) s = maxOrderUsd / price;
   }
   return Math.max(0.01, Math.round(s * 100) / 100);
+}
+
+export function applySizeLimit(size: number, price: number): number {
+  return calculateDynamicSize(size, price, config.dynamicAmount, config.maxOrderUsd, config.sizeMultiplier);
 }
 
 export async function pollAndCopy(): Promise<{
@@ -27,17 +42,25 @@ export async function pollAndCopy(): Promise<{
   errors: string[];
 }> {
   const errors: string[] = [];
-  const user = getCopyTarget() || config.targetUser;
-  if (!user) return { fetched: 0, copied: 0, errors: ["No target user"] };
+  const activeTargets = getCopyTargets().length > 0 ? getCopyTargets() : config.targetUsers;
+  if (activeTargets.length === 0) return { fetched: 0, copied: 0, errors: ["No target users"] };
 
-  const activities = await getActivity(config.dataApiUrl, {
-    user,
-    limit: config.activityLimit,
-    offset: 0,
-    type: config.copyTradesOnly ? "TRADE" : undefined,
-    sortBy: "TIMESTAMP",
-    sortDirection: "DESC",
-  });
+  const allActivitiesPromises = activeTargets.map(user => 
+    getActivity(config.dataApiUrl, {
+      user,
+      limit: config.activityLimit,
+      offset: 0,
+      type: config.copyTradesOnly ? "TRADE" : undefined,
+      sortBy: "TIMESTAMP",
+      sortDirection: "DESC",
+    }).catch(e => {
+      errors.push(`Failed to fetch for ${user}: ${e instanceof Error ? e.message : e}`);
+      return [];
+    })
+  );
+
+  const activitiesArrays = await Promise.all(allActivitiesPromises);
+  const activities = activitiesArrays.flat().sort((a, b) => (b.timestamp ?? 0) - (a.timestamp ?? 0));
 
   let copied = 0;
   for (let i = activities.length - 1; i >= 0; i--) {

@@ -27,12 +27,16 @@ const privateKey = normalizePrivateKey(env.POLYMARKET_PRIVATE_KEY ?? "");
 const funderAddress = (env.POLYMARKET_FUNDER_ADDRESS ?? env.POLYMARKET_ADDRESS ?? "").trim();
 
 export const config = {
-  targetUser: (env.COPY_TARGET_USER ?? env.COPY_TARGET_PROXY ?? "").trim(),
+  targetUsers: (env.COPY_TARGET_USER ?? env.COPY_TARGET_PROXY ?? "")
+    .split(",")
+    .map(s => s.trim())
+    .filter(s => s.length > 0),
   pollIntervalMs: Math.max(5_000, parseInt(env.COPY_POLL_INTERVAL_MS ?? "15000", 10)),
   activityLimit: Math.min(500, Math.max(10, parseInt(env.COPY_ACTIVITY_LIMIT ?? "100", 10))),
   sizeMultiplier: Math.max(0.01, Math.min(10, parseFloat(env.COPY_SIZE_MULTIPLIER ?? "1"))),
   maxOrderUsd: parseFloat(env.COPY_MAX_ORDER_USD ?? "0") || null,
   copyTradesOnly: (env.COPY_TRADES_ONLY ?? "true").toLowerCase() === "true",
+  dynamicAmount: (env.COPY_DYNAMIC_AMOUNT ?? "false").toLowerCase() === "true",
 
   dataApiUrl: (env.POLYMARKET_DATA_API_URL ?? "https://data-api.polymarket.com").replace(/\/$/, ""),
   clobUrl: (env.POLYMARKET_CLOB_URL ?? "https://clob.polymarket.com").replace(/\/$/, ""),
@@ -48,7 +52,7 @@ export const config = {
 } as const;
 
 export function validateConfig(): string | null {
-  if (!config.targetUser) return "COPY_TARGET_USER or COPY_TARGET_PROXY required";
+  if (config.targetUsers.length === 0) return "COPY_TARGET_USER or COPY_TARGET_PROXY required (comma separated for multiple)";
   if (!config.privateKey || !/^0x[a-fA-F0-9]{64}$/.test(config.privateKey))
     return "POLYMARKET_PRIVATE_KEY must be 64 hex characters (0x prefix optional)";
   if (!config.funderAddress || !/^0x[a-fA-F0-9]{40}$/.test(config.funderAddress))
