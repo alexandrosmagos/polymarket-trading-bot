@@ -53,7 +53,7 @@ export async function pollAndCopy(): Promise<{
   const activeTargets = getCopyTargets().length > 0 ? getCopyTargets() : config.targetUsers;
   if (activeTargets.length === 0) return { fetched: 0, copied: 0, errors: ["No target users"] };
 
-  const allActivitiesPromises = activeTargets.map(user => 
+  const allActivitiesPromises = activeTargets.map(user =>
     getActivity(config.dataApiUrl, {
       user,
       limit: config.activityLimit,
@@ -87,9 +87,15 @@ export async function pollAndCopy(): Promise<{
     const size = a.size ?? 0;
     if (size < 0.01) continue;
 
+    // Filter by maximum price (e.g., only take unlikely bets that pay out more)
+    if (config.maxPrice < 1.0 && price > config.maxPrice) {
+      console.log(`Skipping: Price ${price} exceeds COPY_MAX_PRICE (${config.maxPrice})`);
+      continue;
+    }
+
     const tokenId = a.asset;
     const side = a.side;
-    
+
     if (config.preventDuplicateAssets && seenAssets.has(tokenId)) {
       const marketInfo = a.title ? ` [${a.title}${a.outcome ? ` - ${a.outcome}` : ""}]` : "";
       console.log(`Blocked Duplicate: Multiple targets bought token: ${tokenId.slice(0, 10)}${marketInfo}. Skipping.`);
@@ -114,9 +120,9 @@ export async function pollAndCopy(): Promise<{
       errors.push(`${tokenId} ${side}: ${result.error}`);
     } else {
       if (config.preventDuplicateAssets) seenAssets.add(tokenId);
-      
+
       const marketInfo = a.title ? ` [${a.title}${a.outcome ? ` - ${a.outcome}` : ""}]` : "";
-      const msg = `Copied: ${side} ${orderSize} @ ${price}${marketInfo} token=${tokenId.slice(0, 10)}... orderID=${result.orderID ?? "ok"}`;
+      const msg = `Copied: ${side} ${orderSize} @ ${price}${marketInfo}`;
       console.log(msg);
       await sendPushoverNotification("Polymarket Bot Trade Executed", msg, 1);
       copied++;

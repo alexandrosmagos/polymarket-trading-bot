@@ -207,18 +207,23 @@ export async function placeMarketOrder(
   }
 }
 
-export async function getDiagnostics(): Promise<{ balance: string; allowance: string }> {
+export async function getDiagnostics(): Promise<{ balance: string; allowances: Record<string, string> }> {
   const clob = await getClobClient();
   
   try {
-    const res = await clob.getBalanceAllowance({ asset_type: AssetType.COLLATERAL });
+    const res = await clob.getBalanceAllowance({ asset_type: AssetType.COLLATERAL }) as {
+      balance: string;
+      allowances?: Record<string, string>;
+      allowance?: string;
+    };
+    const allowances = res.allowances ?? (res.allowance != null ? { CLOB: res.allowance } : {});
     return {
       balance: String(res.balance ?? "0"),
-      allowance: String(res.allowance ?? "0")
+      allowances,
     };
   } catch (e) {
     const msg = e instanceof Error ? e.message : String(e);
-    return { balance: `error: ${msg}`, allowance: `error: ${msg}` };
+    return { balance: `error: ${msg}`, allowances: {} };
   }
 }
 

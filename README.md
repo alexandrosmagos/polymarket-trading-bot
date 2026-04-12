@@ -87,6 +87,7 @@ All config is via environment variables (see `.env.example`).
 | `COPY_ACTIVITY_LIMIT` | Max recent activities to fetch per target per poll | `100` |
 | `COPY_SIZE_MULTIPLIER` | Multiply copied trade size by this factor | `1` |
 | `COPY_MAX_ORDER_USD` | Hard cap per copied order in USD (0 = no cap) | `100` |
+| `COPY_MAX_PRICE` | Maximum price per share to copy (e.g., 0.3 for unlikely high-payout bets) | `1.0` |
 | `COPY_TRADES_ONLY` | If `true`, only copies TRADE events, not merges/redeems | `true` |
 | `COPY_DYNAMIC_AMOUNT` | If `true`, uses custom logarithmic scaling (logic tailored to personal needs) | `false` |
 | `COPY_PREVENT_DUPLICATE_ASSETS` | If `true`, skips follow-on copies of the same token from other targets and sends a Pushover notification | `false` |

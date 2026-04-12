@@ -35,6 +35,7 @@ export const config = {
   activityLimit: Math.min(500, Math.max(10, parseInt(env.COPY_ACTIVITY_LIMIT ?? "100", 10))),
   sizeMultiplier: Math.max(0.01, Math.min(10, parseFloat(env.COPY_SIZE_MULTIPLIER ?? "1"))),
   maxOrderUsd: parseFloat(env.COPY_MAX_ORDER_USD ?? "0") || null,
+  maxPrice: parseFloat(env.COPY_MAX_PRICE ?? "1.0"),
   copyTradesOnly: (env.COPY_TRADES_ONLY ?? "true").toLowerCase() === "true",
   dynamicAmount: (env.COPY_DYNAMIC_AMOUNT ?? "false").toLowerCase() === "true",
   preventDuplicateAssets: (env.COPY_PREVENT_DUPLICATE_ASSETS ?? "false").toLowerCase() === "true",
