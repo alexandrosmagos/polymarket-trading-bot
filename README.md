@@ -14,9 +14,11 @@ If you’ve been looking for:
 
 ## What it does
 
-- **Watches** a target user (address or username → proxy) on Polymarket
-- **Polls periodically** and fetches recent activity
-- **Copies trades** to your account with optional risk controls (multiplier, max order size, trades-only mode)
+- **Watches** one or more target users (address or username → proxy) on Polymarket
+- **Polls periodically** and fetches recent activity from **all targets concurrently**
+- **Copies trades** to your account with optional risk controls (multiplier, max order size, dynamic sizing, duplicate prevention)
+- **Sends Pushover notifications** on bot start, trades placed, and verify checks
+- **Skips historical trades** — only acts on activity that happens after the bot starts
 
 ---
 
@@ -69,33 +71,63 @@ npm start
 
 All config is via environment variables (see `.env.example`).
 
-### Copy target
+### Copy targets
 
-Pick one:
-- **`COPY_TARGET_USER`**: target proxy address *or* username (the bot will try to resolve username → proxy)
+- **`COPY_TARGET_USER`**: One or more proxy addresses or usernames, **comma-separated**.
+  ```
+  COPY_TARGET_USER=0xABCD...,0x1234...,someusername
+  ```
+  The bot will resolve any usernames to proxy addresses on startup.
 
 ### Core knobs
 
-| Variable | What it controls | Example |
+| Variable | What it controls | Default |
 |---|---|---|
-| `COPY_POLL_INTERVAL_MS` | How often to poll for new activity | `15000` |
-| `COPY_ACTIVITY_LIMIT` | How many recent activities to consider per poll | `100` |
-| `COPY_SIZE_MULTIPLIER` | Multiply copied trade size | `1` |
-| `COPY_MAX_ORDER_USD` | Hard cap per copied order (0 = no cap) | `25` |
-| `COPY_TRADES_ONLY` | If `true`, avoids copying non-trade activity | `true` |
+| `COPY_POLL_INTERVAL_MS` | How often to poll for new activity (ms) | `15000` |
+| `COPY_ACTIVITY_LIMIT` | Max recent activities to fetch per target per poll | `100` |
+| `COPY_SIZE_MULTIPLIER` | Multiply copied trade size by this factor | `1` |
+| `COPY_MAX_ORDER_USD` | Hard cap per copied order in USD (0 = no cap) | `100` |
+| `COPY_TRADES_ONLY` | If `true`, only copies TRADE events, not merges/redeems | `true` |
+| `COPY_DYNAMIC_AMOUNT` | If `true`, uses custom logarithmic scaling (logic tailored to personal needs) | `false` |
+| `COPY_PREVENT_DUPLICATE_ASSETS` | If `true`, skips follow-on copies of the same token from other targets and sends a Pushover notification | `false` |
 
 ### Your wallet / Polymarket account
 
 | Variable | Required | Notes |
 |---|---:|---|
 | `POLYMARKET_PRIVATE_KEY` | ✅ | 64 hex chars (with or without `0x`) |
-| `POLYMARKET_ADDRESS` | ✅ | Your Polymarket proxy/funder address (from UI) |
-| `POLYMARKET_SIGNATURE_TYPE` | ❌ | Usually auto-detected; override only if needed |
-| `POLYMARKET_CHAIN_ID` | ❌ | Defaults to Polygon in most setups |
+| `POLYMARKET_ADDRESS` | ✅ | Your Polymarket **proxy/funder address** (from UI, not your EOA) |
+| `POLYMARKET_SIGNATURE_TYPE` | ❌ | Auto-detected; set `1` for Polymarket proxy wallets if auto-detection fails |
+| `POLYMARKET_CHAIN_ID` | ❌ | Defaults to `137` (Polygon) |
+
+### Pushover notifications (optional)
+
+| Variable | Notes |
+|---|---|
+| `PUSHOVER_API_TOKEN` | Your Pushover application token |
+| `PUSHOVER_USER_KEY` | Your Pushover user/group key |
+
+When set, the bot sends notifications on:
+- **Startup** — confirmation with target count
+- **Trade placed** — details of the copied order
+- **Duplicate blocked** — when `COPY_PREVENT_DUPLICATE_ASSETS=true` and a second target buys the same token
+- **Verify** — result of `npm run verify`
 
 ---
 
-## Safety / “please don’t DM me at 3AM”
+## npm Scripts
+
+| Command | What it does |
+|---|---|
+| `npm run dev` | Run bot with `tsx` (no build step, great for dev) |
+| `npm start` | Build and run production bundle |
+| `npm run verify` | Check config, connect to CLOB, print balance & allowance |
+| `npm test` | Run unit tests |
+| `npm run lint` | TypeScript type check (no emit) |
+
+---
+
+## Safety / "please don't DM me at 3AM"
 
 - **Never commit your `.env`**. If you do, the internet will treat it like free samples at Costco.
 - Consider running on a **fresh wallet** with limited funds while testing.
@@ -105,11 +137,22 @@ Pick one:
 
 ## Troubleshooting
 
-- **`POLYMARKET_PRIVATE_KEY is required...`**  
+- **`POLYMARKET_PRIVATE_KEY is required...`**
   Your key is missing or not valid hex. The bot accepts **64 hex chars** with optional `0x`.
 
-- **“Could not resolve username to proxy”**  
-  Use a **proxy address** (0x…) for `COPY_TARGET_USER` or set the correct target.
+- **"Could not resolve username to proxy"**
+  Use a **proxy address** (0x…) for `COPY_TARGET_USER` or fix the username.
+
+- **`not enough balance / allowance: balance is 0`**
+  Your CLOB escrow balance is 0. The bot uses funds deposited **inside Polymarket**, not directly from your wallet.
+  Go to [polymarket.com](https://polymarket.com) → **Portfolio → Deposit** to fund your account.
+  Confirm with `npm run verify`.
+
+- **`invalid signature`**
+  Your `POLYMARKET_ADDRESS` is wrong. It must be the **proxy address** from the Polymarket UI (not your raw EOA). Set `POLYMARKET_SIGNATURE_TYPE=1` if auto-detection fails.
+
+- **`the orderbook ... does not exist`**
+  The market is resolved/closed. This is harmless — the engine skips it automatically.
 
 ---
 

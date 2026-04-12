@@ -91,9 +91,10 @@ export async function pollAndCopy(): Promise<{
     const side = a.side;
     
     if (config.preventDuplicateAssets && seenAssets.has(tokenId)) {
+      const marketInfo = a.title ? ` [${a.title}${a.outcome ? ` - ${a.outcome}` : ""}]` : "";
       await sendPushoverNotification(
         "Polymarket Bot Blocked Duplicate",
-        `Multiple targets bought token: ${tokenId.slice(0, 10)}. Skipping duplicate copy.`
+        `Multiple targets bought token: ${tokenId.slice(0, 10)}${marketInfo}. Skipping duplicate copy.`
       );
       continue;
     }
@@ -117,7 +118,8 @@ export async function pollAndCopy(): Promise<{
     } else {
       if (config.preventDuplicateAssets) seenAssets.add(tokenId);
       
-      const msg = `Copied: ${side} ${orderSize} @ ${price} token=${tokenId.slice(0, 10)}... orderID=${result.orderID ?? "ok"}`;
+      const marketInfo = a.title ? ` [${a.title}${a.outcome ? ` - ${a.outcome}` : ""}]` : "";
+      const msg = `Copied: ${side} ${orderSize} @ ${price}${marketInfo} token=${tokenId.slice(0, 10)}... orderID=${result.orderID ?? "ok"}`;
       console.log(msg);
       await sendPushoverNotification("Polymarket Bot Trade Executed", msg);
       copied++;
