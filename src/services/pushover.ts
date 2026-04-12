@@ -1,6 +1,6 @@
 import { config } from "../config/index.js";
 
-export async function sendPushoverNotification(title: string, message: string): Promise<void> {
+export async function sendPushoverNotification(title: string, message: string, priority: number = 0): Promise<void> {
   if (!config.pushoverApiToken || !config.pushoverUserKey) {
     return; // Don't send if not configured
   }
@@ -14,6 +14,7 @@ export async function sendPushoverNotification(title: string, message: string): 
         user: config.pushoverUserKey,
         title,
         message,
+        priority,
       }),
     });
 

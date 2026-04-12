@@ -121,7 +121,7 @@ export async function pollAndCopy(): Promise<{
       const marketInfo = a.title ? ` [${a.title}${a.outcome ? ` - ${a.outcome}` : ""}]` : "";
       const msg = `Copied: ${side} ${orderSize} @ ${price}${marketInfo} token=${tokenId.slice(0, 10)}... orderID=${result.orderID ?? "ok"}`;
       console.log(msg);
-      await sendPushoverNotification("Polymarket Bot Trade Executed", msg);
+      await sendPushoverNotification("Polymarket Bot Trade Executed", msg, 1);
       copied++;
     }
   }
