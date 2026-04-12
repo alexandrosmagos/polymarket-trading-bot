@@ -7,6 +7,7 @@ import { sendPushoverNotification } from "../services/pushover.js";
 const SEEN_CAP = 10_000;
 const seen = new Set<string>();
 const seenAssets = new Set<string>();
+const botStartTime = Date.now();
 
 function trimSeen(): void {
   if (seen.size <= SEEN_CAP) return;
@@ -73,6 +74,9 @@ export async function pollAndCopy(): Promise<{
   for (let i = activities.length - 1; i >= 0; i--) {
     const a = activities[i]!;
     if (a.type !== "TRADE" || !a.asset || !a.side) continue;
+
+    // Skip historical trades from before the bot started
+    if (a.timestamp && a.timestamp * 1000 < botStartTime) continue;
 
     const key = tradeEventKey(a);
     if (seen.has(key)) continue;

@@ -10,7 +10,8 @@
     "dev": "tsx src/index.ts",
     "copy": "tsx src/index.ts",
     "lint": "tsc --noEmit",
-    "test": "tsx --test src/**/*.test.ts"
+    "test": "tsx --test src/**/*.test.ts",
+    "verify": "tsx src/verify.ts"
   },
   "dependencies": {
     "@ethersproject/providers": "^5.7.2",

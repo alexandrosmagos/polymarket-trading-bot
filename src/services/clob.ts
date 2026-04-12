@@ -1,7 +1,7 @@
 /**
  * Polymarket CLOB: authenticated client, tick sizes, and limit-order placement.
  */
-import { ApiError, ClobClient, Side, OrderType } from "@polymarket/clob-client";
+import { ApiError, ClobClient, Side, OrderType, AssetType } from "@polymarket/clob-client";
 import { Wallet } from "@ethersproject/wallet";
 import { config } from "../config/index.js";
 
@@ -204,6 +204,21 @@ export async function placeMarketOrder(
   } catch (e) {
     const msg = e instanceof Error ? e.message : String(e);
     return { error: msg };
+  }
+}
+
+export async function getDiagnostics(): Promise<{ balance: string; allowance: string }> {
+  const clob = await getClobClient();
+  
+  try {
+    const res = await clob.getBalanceAllowance({ asset_type: AssetType.COLLATERAL });
+    return {
+      balance: String(res.balance ?? "0"),
+      allowance: String(res.allowance ?? "0")
+    };
+  } catch (e) {
+    const msg = e instanceof Error ? e.message : String(e);
+    return { balance: `error: ${msg}`, allowance: `error: ${msg}` };
   }
 }
 
