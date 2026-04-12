@@ -168,7 +168,7 @@ export async function pollAndCopy(): Promise<{
     }
   }
 
-  if (activities.length > 0) {
+  if (copied > 0 || errors.length > 0) {
     console.log(
       `[copy-engine] poll: ${activities.length} activities (${insiderActivities.length} insider / ${whaleActivities.length} whale), ${copied} copied, ${errors.length} errors`
     );

@@ -89,7 +89,7 @@ async function main(): Promise<void> {
     try {
       const { fetched, copied, errors } = await pollAndCopy();
       if (errors.length) console.error("Errors:", errors.slice(0, 5));
-      if (fetched > 0 || copied > 0) console.log(`Poll: fetched=${fetched} copied=${copied}`);
+      if (copied > 0 || errors.length > 0) console.log(`Poll: fetched=${fetched} copied=${copied}`);
     } catch (e) {
       console.error("Poll failed:", e);
     }
