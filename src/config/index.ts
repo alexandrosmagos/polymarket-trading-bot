@@ -37,6 +37,10 @@ export const config = {
   maxOrderUsd: parseFloat(env.COPY_MAX_ORDER_USD ?? "0") || null,
   copyTradesOnly: (env.COPY_TRADES_ONLY ?? "true").toLowerCase() === "true",
   dynamicAmount: (env.COPY_DYNAMIC_AMOUNT ?? "false").toLowerCase() === "true",
+  preventDuplicateAssets: (env.COPY_PREVENT_DUPLICATE_ASSETS ?? "false").toLowerCase() === "true",
+
+  pushoverApiToken: (env.PUSHOVER_API_TOKEN ?? "").trim(),
+  pushoverUserKey: (env.PUSHOVER_USER_KEY ?? "").trim(),
 
   dataApiUrl: (env.POLYMARKET_DATA_API_URL ?? "https://data-api.polymarket.com").replace(/\/$/, ""),
   clobUrl: (env.POLYMARKET_CLOB_URL ?? "https://clob.polymarket.com").replace(/\/$/, ""),

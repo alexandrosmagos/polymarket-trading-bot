@@ -2,14 +2,21 @@ import { getActivity, tradeEventKey } from "../services/data-api.js";
 import { getTickSize, placeLimitOrder } from "../services/clob.js";
 import { config } from "../config/index.js";
 import { getCopyTargets } from "../utils/target.js";
+import { sendPushoverNotification } from "../services/pushover.js";
 
 const SEEN_CAP = 10_000;
 const seen = new Set<string>();
+const seenAssets = new Set<string>();
 
 function trimSeen(): void {
   if (seen.size <= SEEN_CAP) return;
   const arr = [...seen];
   for (let i = 0; i < arr.length - SEEN_CAP; i++) seen.delete(arr[i]!);
+
+  if (seenAssets.size > SEEN_CAP) {
+    const assetsArr = [...seenAssets];
+    for (let i = 0; i < assetsArr.length - SEEN_CAP; i++) seenAssets.delete(assetsArr[i]!);
+  }
 }
 
 export function calculateDynamicSize(size: number, price: number, dynamicAmount: boolean, maxOrderUsd: number | null, sizeMultiplier: number): number {
@@ -78,6 +85,15 @@ export async function pollAndCopy(): Promise<{
 
     const tokenId = a.asset;
     const side = a.side;
+    
+    if (config.preventDuplicateAssets && seenAssets.has(tokenId)) {
+      await sendPushoverNotification(
+        "Polymarket Bot Blocked Duplicate",
+        `Multiple targets bought token: ${tokenId.slice(0, 10)}. Skipping duplicate copy.`
+      );
+      continue;
+    }
+
     const orderSize = applySizeLimit(size, price);
 
     let tickSize: string | null = null;
@@ -95,9 +111,11 @@ export async function pollAndCopy(): Promise<{
     if (result.error) {
       errors.push(`${tokenId} ${side}: ${result.error}`);
     } else {
-      console.log(
-        `Copied: ${side} ${orderSize} @ ${price} token=${tokenId.slice(0, 10)}... orderID=${result.orderID ?? "ok"}`
-      );
+      if (config.preventDuplicateAssets) seenAssets.add(tokenId);
+      
+      const msg = `Copied: ${side} ${orderSize} @ ${price} token=${tokenId.slice(0, 10)}... orderID=${result.orderID ?? "ok"}`;
+      console.log(msg);
+      await sendPushoverNotification("Polymarket Bot Trade Executed", msg);
       copied++;
     }
   }

@@ -5,6 +5,7 @@ import { config, validateConfig } from "./config/index.js";
 import { pollAndCopy } from "./core/copy-engine.js";
 import { setCopyTargets } from "./utils/target.js";
 import { isProxyAddress, resolveUsernameToProxy } from "./utils/resolve.js";
+import { sendPushoverNotification } from "./services/pushover.js";
 
 function normalizeAndValidatePrivateKey(raw: string): string | null {
   const trimmed = raw.trim();
@@ -60,6 +61,8 @@ async function main(): Promise<void> {
   console.log("Poll interval (ms):", config.pollIntervalMs);
   console.log("Size multiplier:", config.sizeMultiplier);
   console.log("---");
+
+  await sendPushoverNotification("Polymarket Bot Started", `Tracking ${resolvedTargets.length} targets. Duplicate prevention is ${config.preventDuplicateAssets ? "ON" : "OFF"}.`);
 
   const run = async () => {
     try {
