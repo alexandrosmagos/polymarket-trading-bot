@@ -92,10 +92,7 @@ export async function pollAndCopy(): Promise<{
     
     if (config.preventDuplicateAssets && seenAssets.has(tokenId)) {
       const marketInfo = a.title ? ` [${a.title}${a.outcome ? ` - ${a.outcome}` : ""}]` : "";
-      await sendPushoverNotification(
-        "Polymarket Bot Blocked Duplicate",
-        `Multiple targets bought token: ${tokenId.slice(0, 10)}${marketInfo}. Skipping duplicate copy.`
-      );
+      console.log(`Blocked Duplicate: Multiple targets bought token: ${tokenId.slice(0, 10)}${marketInfo}. Skipping.`);
       continue;
     }
 
