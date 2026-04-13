@@ -59,11 +59,6 @@ export const config = {
   maxOrderUsd: parseFloat(env.COPY_MAX_ORDER_USD ?? "0") || null,
   copyTradesOnly: (env.COPY_TRADES_ONLY ?? "true").toLowerCase() === "true",
   dynamicAmount: (env.COPY_DYNAMIC_AMOUNT ?? "false").toLowerCase() === "true",
-  /**
-   * Added to the BUY price to cross the spread and fill immediately (aggressive limit).
-   * 0.01 means bid 1 cent above the target's price. Set to 0 to disable.
-   */
-  priceBuffer: Math.max(0, parseFloat(env.COPY_PRICE_BUFFER ?? "0.01")),
 
   pushoverApiToken: (env.PUSHOVER_API_TOKEN ?? "").trim(),
   pushoverUserKey: (env.PUSHOVER_USER_KEY ?? "").trim(),

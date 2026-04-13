@@ -1,7 +1,7 @@
 /**
- * Polymarket CLOB: authenticated client, tick sizes, and limit-order placement.
+ * Polymarket CLOB: authenticated client, tick sizes, and market-order placement.
  */
-import { ApiError, ClobClient, Side, OrderType, AssetType } from "@polymarket/clob-client";
+import { ApiError, ClobClient, Side, AssetType } from "@polymarket/clob-client";
 import { Wallet } from "@ethersproject/wallet";
 import { config } from "../config/index.js";
 
@@ -149,37 +149,6 @@ export async function getMarketInfo(tokenId: string): Promise<{ tickSize: string
     tickSize: book.tick_size ? toTickSize(book.tick_size) : "0.01",
     negRisk: book.neg_risk === true,
   };
-}
-
-export async function placeLimitOrder(
-  tokenId: string,
-  side: "BUY" | "SELL",
-  price: number,
-  size: number,
-  tickSize: string,
-  negRisk: boolean = false
-): Promise<{ orderID?: string; error?: string }> {
-  const clob = await getClobClient();
-  const sideEnum = side === "BUY" ? Side.BUY : Side.SELL;
-  const roundedPrice = roundToTick(price, parseFloat(tickSize));
-  const roundedSize = Math.max(0.01, Math.round(size * 100) / 100);
-
-  try {
-    const res = await clob.createAndPostOrder(
-      {
-        tokenID: tokenId,
-        price: roundedPrice,
-        size: roundedSize,
-        side: sideEnum,
-      },
-      { tickSize: toTickSize(tickSize), negRisk },
-      OrderType.GTC
-    );
-    return { orderID: (res as { orderID?: string })?.orderID ?? (res as { id?: string })?.id };
-  } catch (e) {
-    const msg = e instanceof Error ? e.message : String(e);
-    return { error: msg };
-  }
 }
 
 export async function placeMarketOrder(

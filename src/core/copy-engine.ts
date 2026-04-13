@@ -1,5 +1,5 @@
 import { getActivity, tradeEventKey, Activity } from "../services/data-api.js";
-import { getMarketInfo, placeLimitOrder } from "../services/clob.js";
+import { getMarketInfo, placeMarketOrder } from "../services/clob.js";
 import { config } from "../config/index.js";
 import { getCopyTargets, getWhaleTargets, getRiskerTargets } from "../utils/target.js";
 import { sendPushoverNotification } from "../services/pushover.js";
@@ -211,7 +211,7 @@ export async function pollAndCopy(): Promise<{
       }
 
       let sellSize = pos.ourSize;
-      let sellResult = await placeLimitOrder(tokenId, "SELL", price, sellSize, market.tickSize, market.negRisk);
+      let sellResult = await placeMarketOrder(tokenId, "SELL", sellSize, market.tickSize, market.negRisk);
 
       // If "not enough balance", parse available shares and retry once with that amount
       if (sellResult.error && (sellResult.error.includes("not enough balance") || sellResult.error.includes("balance is not enough"))) {
@@ -219,7 +219,7 @@ export async function pollAndCopy(): Promise<{
         if (available !== null && available > 0 && available < sellSize) {
           console.log(`[exit] Partial fill detected — retrying SELL with ${available} shares (had ${sellSize})`);
           sellSize = available;
-          sellResult = await placeLimitOrder(tokenId, "SELL", price, sellSize, market.tickSize, market.negRisk);
+          sellResult = await placeMarketOrder(tokenId, "SELL", sellSize, market.tickSize, market.negRisk);
         }
       }
 
@@ -291,12 +291,7 @@ export async function pollAndCopy(): Promise<{
       continue;
     }
 
-    // Apply price buffer: bid slightly above the target's price to cross the spread
-    const bufferedPrice = config.priceBuffer > 0
-      ? roundToTick(price + config.priceBuffer, market.tickSize)
-      : roundToTick(price, market.tickSize);
-
-    const result = await placeLimitOrder(tokenId, "BUY", bufferedPrice, orderSize, market.tickSize, market.negRisk);
+    const result = await placeMarketOrder(tokenId, "BUY", orderSize, market.tickSize, market.negRisk);
     if (result.error) {
       errors.push(`${tokenId} BUY: ${result.error}`);
 
@@ -305,7 +300,7 @@ export async function pollAndCopy(): Promise<{
         const failMsg = [
           `⚠️ Insufficient Balance to BUY`,
           `${userType} (${userAddr}) traded${marketInfo}`,
-          `Wanted: ${orderSize} @ ${bufferedPrice}`,
+          `Wanted: ${orderSize} shares`,
           `Error: ${result.error.split(":").pop()?.trim()}`
         ].join("\n");
         console.warn(`[buy-fail] ${failMsg.replace(/\n/g, " | ")}`);
@@ -318,16 +313,13 @@ export async function pollAndCopy(): Promise<{
         tokenId,
         sourceUser: a._sourceUser,
         ourSize: orderSize,
-        price: bufferedPrice,
+        price: price,
         marketTitle: a.title,
         outcome: a.outcome,
         boughtAt: Date.now(),
       });
 
-      const bufferNote = config.priceBuffer > 0 && bufferedPrice !== price
-        ? ` (+${config.priceBuffer} buffer)`
-        : "";
-      const msg = `${userType} (${userAddr})\nBUY ${orderSize} @ ${bufferedPrice}${bufferNote}${marketInfo}`;
+      const msg = `${userType} (${userAddr})\nBUY ${orderSize} @ market${marketInfo}`;
       console.log(`Copied: ${msg}`);
       await sendPushoverNotification("Polymarket Bot Trade Executed", msg, 1);
       copied++;
