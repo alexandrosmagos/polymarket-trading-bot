@@ -1,6 +1,7 @@
 import test from "node:test";
 import assert from "node:assert";
-import { calculateDynamicSize } from "./copy-engine.js";
+import { calculateDynamicSize, applySizeLimit } from "./copy-engine.js";
+import { config } from "../config/index.js";
 
 test("calculateDynamicSize - scales logarithmically from $100 to $100k", () => {
   const dynamicAmount = true;
@@ -30,4 +31,31 @@ test("calculateDynamicSize - scales logarithmically from $100 to $100k", () => {
   const limit4 = calculateDynamicSize(500, price, false, minOrderUsd, maxOrderUsd, multiplier);
   // Total notional 500 * 0.5 = 250 > 10 (max). Capped to 10 USD -> 20 shares
   assert.strictEqual(limit4, 20);
+});
+
+test("calculateDynamicSize - handles edge cases", () => {
+  const minOrderUsd = 1;
+  const maxOrderUsd = 5;
+  const multiplier = 1;
+  const price = 0.50;
+
+  // Below $100 baseline - uses minOrderUsd
+  const below = calculateDynamicSize(50, price, true, minOrderUsd, maxOrderUsd, multiplier);
+  assert.strictEqual(below, 2); // $1 / $0.50 = 2 shares
+
+  // Zero price - should not crash
+  const zeroPrice = calculateDynamicSize(100, 0, true, minOrderUsd, maxOrderUsd, multiplier);
+  assert.ok(zeroPrice >= 0);
+
+  // Null maxOrderUsd - no cap
+  const noCap = calculateDynamicSize(1000, price, true, minOrderUsd, null, multiplier);
+  assert.ok(noCap > 0);
+});
+
+test("applySizeLimit - uses config values", () => {
+  const size = 100;
+  const price = 0.50;
+  
+  const result = applySizeLimit(size, price);
+  assert.ok(result > 0);
 });
