@@ -89,7 +89,11 @@ async function fetchActivities(
         _whaleMinUsd: whaleMinUsdMap ? (whaleMinUsdMap.get(user) ?? null) : null,
       }) as TaggedActivity)
     ).catch(e => {
-      errors.push(`Failed to fetch for ${user}: ${e instanceof Error ? e.message : e}`);
+      let reason = e instanceof Error ? e.message : String(e);
+      if (e && typeof e === 'object' && 'cause' in e && e.cause) {
+        reason += ` (cause: ${(e.cause as Error).message || String(e.cause)})`;
+      }
+      errors.push(`Failed to fetch for ${user}: ${reason}`);
       return [] as TaggedActivity[];
     })
   );
@@ -226,10 +230,10 @@ export async function pollAndCopy(): Promise<{
 
     // Whale filter: per-user minimum trade USD check
     if (a._whaleMinUsd !== null) {
-      // usdcSize (6-decimal) is preferred, but some activities don't include it.
-      // Fall back to size × price which gives the same result in USD.
+      // usdcSize is already a normal float in the API response (e.g. 95.241)
+      // Fall back to size × price which gives the same result.
       const tradeUsd = (a.usdcSize != null && a.usdcSize > 0)
-        ? a.usdcSize / 1_000_000
+        ? a.usdcSize
         : (a.size ?? 0) * (a.price ?? 0);
       const minUsd = a._whaleMinUsd;
       if (tradeUsd < minUsd) {
