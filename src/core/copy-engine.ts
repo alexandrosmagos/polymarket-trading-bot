@@ -257,6 +257,18 @@ export async function pollAndCopy(): Promise<{
     const result = await placeLimitOrder(tokenId, "BUY", bufferedPrice, orderSize, market.tickSize, market.negRisk);
     if (result.error) {
       errors.push(`${tokenId} BUY: ${result.error}`);
+
+      // Notify if balance is too low to copy the BUY
+      if (result.error.includes("not enough balance") || result.error.includes("balance is not enough")) {
+        const failMsg = [
+          `⚠️ Insufficient Balance to BUY`,
+          `${userType} (${userAddr}) traded${marketInfo}`,
+          `Wanted: ${orderSize} @ ${bufferedPrice}`,
+          `Error: ${result.error.split(":").pop()?.trim()}`
+        ].join("\n");
+        console.warn(`[buy-fail] ${failMsg.replace(/\n/g, " | ")}`);
+        await sendPushoverNotification("Polymarket Bot BUY Failed", failMsg, 1);
+      }
     } else {
       seenAssets.add(tokenId);
 
