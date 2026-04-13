@@ -127,6 +127,16 @@ async function main(): Promise<void> {
   console.log("Size multiplier:", config.sizeMultiplier);
   console.log("---");
 
+  const totalUsers = config.targetUsers.length + config.whaleUsers.length + config.riskerUsers.length;
+  const activityRequestsPerSec = totalUsers / (config.pollIntervalMs / 1000);
+  const WARN_THRESHOLD = 80;
+
+  if (activityRequestsPerSec > WARN_THRESHOLD) {
+    console.warn(`⚠️ API RATE LIMIT WARNING: ${activityRequestsPerSec.toFixed(1)} activity req/s`);
+    console.warn(`   ${totalUsers} users / ${config.pollIntervalMs}ms interval exceeds ${WARN_THRESHOLD} req/s safe threshold.`);
+    console.warn(`   Consider increasing COPY_POLL_INTERVAL_MS to avoid throttling.`);
+  }
+
   await sendPushoverNotification("Polymarket Bot Started", `Tracking ${resolvedTargets.length} insiders, ${resolvedWhaleTargets.length} whales, ${resolvedRiskerTargets.length} riskers.`);
 
   const run = async () => {
