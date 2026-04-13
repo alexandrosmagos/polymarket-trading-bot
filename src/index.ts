@@ -6,7 +6,9 @@ import { pollAndCopy } from "./core/copy-engine.js";
 import { setCopyTargets, setWhaleTargets } from "./utils/target.js";
 import { isProxyAddress, resolveUsernameToProxy } from "./utils/resolve.js";
 import { sendPushoverNotification } from "./services/pushover.js";
-import { loadPositions } from "./services/positions.js";
+import { loadPositions, getAllTrackedTokenIds } from "./services/positions.js";
+import { syncAccountPositions } from "./services/sync.js";
+import { markTokensAsOwned } from "./core/copy-engine.js";
 
 function normalizeAndValidatePrivateKey(raw: string): string | null {
   const trimmed = raw.trim();
@@ -36,6 +38,25 @@ async function main(): Promise<void> {
   }
 
   loadPositions();
+
+  // Populate seenAssets from persisted positions (so we don't re-buy what we hold)
+  markTokensAsOwned(getAllTrackedTokenIds());
+
+  // Sync own account activity against targets to discover untracked positions
+  console.log("[sync] Syncing account positions...");
+  const syncResult = await syncAccountPositions();
+  if (syncResult.totalFound > 0) {
+    console.log(`[sync] Found ${syncResult.totalFound} held token(s): ${syncResult.newlyMatched} matched to targets, ${syncResult.alreadyTracked} already tracked, ${syncResult.unmatched.length} unmatched (held manually).`);
+    if (syncResult.unmatched.length > 0) {
+      for (const u of syncResult.unmatched) {
+        console.log(`[sync]   unmatched: ${u.tokenId.slice(0, 12)}... ${u.marketTitle ? `(${u.marketTitle})` : ""}`);
+      }
+    }
+    // Also mark synced positions in seenAssets
+    markTokensAsOwned(getAllTrackedTokenIds());
+  } else {
+    console.log("[sync] No open positions found in account.");
+  }
 
   let targets = config.targetUsers;
   const resolvedTargets: string[] = [];
