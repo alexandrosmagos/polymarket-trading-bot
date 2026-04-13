@@ -10,6 +10,12 @@ const seen = new Set<string>();
 export const seenAssets = new Set<string>();
 const botStartTime = Date.now();
 
+/**
+ * Tokens where a SELL permanently failed this session.
+ * Once in here, we stop retrying — user must act manually.
+ */
+const failedSells = new Set<string>();
+
 /** Called after positions are loaded/synced so seenAssets reflects what we already own */
 export function markTokensAsOwned(tokenIds: string[]): void {
   for (const id of tokenIds) seenAssets.add(id);
@@ -24,6 +30,15 @@ function trimSeen(): void {
     const assetsArr = [...seenAssets];
     for (let i = 0; i < assetsArr.length - SEEN_CAP; i++) seenAssets.delete(assetsArr[i]!);
   }
+}
+
+/** Round a price to the nearest tick, clamped to [0.0001, 0.9999]. */
+function roundToTick(value: number, tickSizeStr: string): number {
+  const tick = parseFloat(tickSizeStr);
+  if (tick <= 0) return value;
+  const decimals = tickSizeStr.split(".")[1]?.length ?? 2;
+  const rounded = Math.round(value / tick) * tick;
+  return Math.min(0.9999, Math.max(0.0001, parseFloat(rounded.toFixed(decimals))));
 }
 
 export function calculateDynamicSize(size: number, price: number, dynamicAmount: boolean, maxOrderUsd: number | null, sizeMultiplier: number): number {
@@ -77,6 +92,19 @@ async function fetchActivities(
     })
   );
   return (await Promise.all(promises)).flat();
+}
+
+/**
+ * Try to extract the available share balance from a CLOB "not enough balance" error.
+ * Error format: "... balance: 38671377, order amount: 42660000"
+ * Returns shares (6-decimal → float), or null if not parseable.
+ */
+function extractAvailableShares(errorMsg: string): number | null {
+  const m = errorMsg.match(/balance:\s*(\d+)/);
+  if (!m) return null;
+  const raw = parseInt(m[1]!, 10);
+  if (isNaN(raw) || raw <= 0) return null;
+  return Math.floor(raw) / 1_000_000;
 }
 
 export async function pollAndCopy(): Promise<{
@@ -138,6 +166,11 @@ export async function pollAndCopy(): Promise<{
         continue;
       }
 
+      // Don't retry if we've already permanently given up on this token
+      if (failedSells.has(tokenId)) {
+        continue;
+      }
+
       console.log(`[exit] ${userType} (${userAddr}) is selling${marketInfo} — placing SELL for ${pos.ourSize} shares`);
 
       const market = await getMarketInfo(tokenId);
@@ -146,14 +179,40 @@ export async function pollAndCopy(): Promise<{
         continue;
       }
 
-      const sellResult = await placeLimitOrder(tokenId, "SELL", price, pos.ourSize, market.tickSize, market.negRisk);
+      let sellSize = pos.ourSize;
+      let sellResult = await placeLimitOrder(tokenId, "SELL", price, sellSize, market.tickSize, market.negRisk);
+
+      // If "not enough balance", parse available shares and retry once with that amount
+      if (sellResult.error && (sellResult.error.includes("not enough balance") || sellResult.error.includes("balance is not enough"))) {
+        const available = extractAvailableShares(sellResult.error);
+        if (available !== null && available > 0 && available < sellSize) {
+          console.log(`[exit] Partial fill detected — retrying SELL with ${available} shares (had ${sellSize})`);
+          sellSize = available;
+          sellResult = await placeLimitOrder(tokenId, "SELL", price, sellSize, market.tickSize, market.negRisk);
+        }
+      }
+
       if (sellResult.error) {
+        // Both attempts failed — give up and notify once
+        failedSells.add(tokenId);
+
         errors.push(`${tokenId} SELL (exit): ${sellResult.error}`);
+
+        const failMsg = [
+          `⚠️ Could not exit position`,
+          `${userType} (${userAddr}) sold${marketInfo}`,
+          `Failed to sell ${sellSize} shares @ ${price}`,
+          `Please exit manually on Polymarket.`,
+        ].join("\n");
+
+        await sendPushoverNotification("Polymarket Bot SELL Failed", failMsg, 1);
       } else {
+        // Successful exit
+        failedSells.delete(tokenId);
         removePosition(tokenId, a._sourceUser);
         seenAssets.delete(tokenId); // Allow re-buying if target enters again
 
-        const msg = `${userType} (${userAddr}) cashed out\nSELL ${pos.ourSize} @ ${price}${marketInfo}`;
+        const msg = `${userType} (${userAddr}) cashed out\nSELL ${sellSize} @ ${price}${marketInfo}`;
         console.log(`Exited: ${msg}`);
         await sendPushoverNotification("Polymarket Bot Position Exited", msg, 1);
         copied++;
@@ -188,7 +247,12 @@ export async function pollAndCopy(): Promise<{
       continue;
     }
 
-    const result = await placeLimitOrder(tokenId, "BUY", price, orderSize, market.tickSize, market.negRisk);
+    // Apply price buffer: bid slightly above the target's price to cross the spread
+    const bufferedPrice = config.priceBuffer > 0
+      ? roundToTick(price + config.priceBuffer, market.tickSize)
+      : roundToTick(price, market.tickSize);
+
+    const result = await placeLimitOrder(tokenId, "BUY", bufferedPrice, orderSize, market.tickSize, market.negRisk);
     if (result.error) {
       errors.push(`${tokenId} BUY: ${result.error}`);
     } else {
@@ -198,13 +262,16 @@ export async function pollAndCopy(): Promise<{
         tokenId,
         sourceUser: a._sourceUser,
         ourSize: orderSize,
-        price,
+        price: bufferedPrice,
         marketTitle: a.title,
         outcome: a.outcome,
         boughtAt: Date.now(),
       });
 
-      const msg = `${userType} (${userAddr})\nBUY ${orderSize} @ ${price}${marketInfo}`;
+      const bufferNote = config.priceBuffer > 0 && bufferedPrice !== price
+        ? ` (+${config.priceBuffer} buffer)`
+        : "";
+      const msg = `${userType} (${userAddr})\nBUY ${orderSize} @ ${bufferedPrice}${bufferNote}${marketInfo}`;
       console.log(`Copied: ${msg}`);
       await sendPushoverNotification("Polymarket Bot Trade Executed", msg, 1);
       copied++;
