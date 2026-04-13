@@ -98,7 +98,6 @@ export async function getClobClient(): Promise<ClobClient> {
         true
       );
       creds = await deriveOrCreateApiKey(authOnly);
-      console.log("Derived API key (key=%s...)", (creds!.key ?? "").slice(0, 8));
     }
     if (!creds)
       throw new Error(
@@ -142,11 +141,14 @@ export async function getOrderBook(tokenId: string): Promise<OrderBookSummary | 
   }
 }
 
-/** Returns tick size string, or null if no orderbook (e.g. market closed/resolved). */
-export async function getTickSize(tokenId: string): Promise<string | null> {
+/** Returns market info, or null if no orderbook (e.g. market closed/resolved). */
+export async function getMarketInfo(tokenId: string): Promise<{ tickSize: string; negRisk: boolean } | null> {
   const book = await getOrderBook(tokenId);
   if (!book) return null;
-  return book.tick_size ? toTickSize(book.tick_size) : "0.01";
+  return {
+    tickSize: book.tick_size ? toTickSize(book.tick_size) : "0.01",
+    negRisk: book.neg_risk === true,
+  };
 }
 
 export async function placeLimitOrder(
@@ -209,7 +211,7 @@ export async function placeMarketOrder(
 
 export async function getDiagnostics(): Promise<{ balance: string; allowances: Record<string, string> }> {
   const clob = await getClobClient();
-  
+
   try {
     const res = await clob.getBalanceAllowance({ asset_type: AssetType.COLLATERAL }) as {
       balance: string;
