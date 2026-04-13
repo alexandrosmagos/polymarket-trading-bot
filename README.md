@@ -105,6 +105,19 @@ Run `npm run verify` to check:
 
 ---
 
+## 🔧 Error Handling & Diagnostics
+
+The bot is designed to be "set and forget," with robust logic to handle common exchange issues:
+
+- **Insufficient Balance (BUY)**: If a BUY fails due to low funds, the bot sends a high-priority Pushover alert with exactly how much USDC was needed.
+- **Partial Fill Recovery (SELL)**: If you attempt to exit a position but have fewer shares than the bot expected, it will parse the "not enough balance" error from the exchange, detect your actual available shares, and **instant-retry** with the correct amount.
+- **Invalid Signatures**: Automatically detects `neg_risk` markets to use the correct signature format requested by Polymarket for binary outcomes.
+- **Price Precision**: Clamps and rounds all buffered prices to the market's specific `tickSize` to prevent "invalid price" errors when crossing the spread.
+- **Network Resiliency**: If the Data API drops a request (e.g., `socket hang up` during high-frequency polling), the bot captures the low-level diagnostic and continues without crashing.
+- **Failed Sell Throttling**: If a SELL permanently fails after retries, it is added to a `failedSells` list to prevent infinite loops and spam, alerting you once via high-priority Push.
+
+---
+
 ## 📜 Disclaimer
 
 This software is for educational purposes. Trading on prediction markets involves significant risk of loss. The authors are not responsible for your financial decisions or the outcomes of copied trades.

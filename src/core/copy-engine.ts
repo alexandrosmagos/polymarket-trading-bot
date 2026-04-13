@@ -33,7 +33,7 @@ function trimSeen(): void {
 }
 
 /** Round a price to the nearest tick, clamped to [tickSize, 1-tickSize] (CLOB valid range). */
-function roundToTick(value: number, tickSizeStr: string): number {
+export function roundToTick(value: number, tickSizeStr: string): number {
   const tick = parseFloat(tickSizeStr);
   if (tick <= 0) return value;
   const decimals = tickSizeStr.split(".")[1]?.length ?? 2;
@@ -127,7 +127,7 @@ async function fetchActivities(
  * Error format: "... balance: 38671377, order amount: 42660000"
  * Returns shares (6-decimal → float), or null if not parseable.
  */
-function extractAvailableShares(errorMsg: string): number | null {
+export function extractAvailableShares(errorMsg: string): number | null {
   const m = errorMsg.match(/balance:\s*(\d+)/);
   if (!m) return null;
   const raw = parseInt(m[1]!, 10);
