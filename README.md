@@ -1,143 +1,110 @@
 # CTRL+C, CTRL+TRADE 🤖
 
-> **A TypeScript/Node bot that mirrors a target Polymarket trader's activity on your account.**
+> **A premium TypeScript/Node bot that mirrors high-conviction Polymarket activity to your account.**
 > Because some people do technical analysis — and some people do *social* analysis.
 
 > [!IMPORTANT]
 > **This project was forked from [`phoneixtrade/polymarket-copy-trading-bot`](https://github.com/phoneixtrade/polymarket-copy-trading-bot).**
-> Since the fork, significant changes have been made to the core copy engine, API reliability, execution flow, configuration system, and developer experience (based on my preferences). The two projects have meaningfully diverged.
+> It has since been heavily modified with a stateful position engine, multi-tier risk filtering, and logarithmic trade scaling.
 
 ---
 
-## What it does
+## 💎 Premium Features
 
-- **Watches** one or more target traders (address or username) on Polymarket
-- **Polls periodically**, fetching recent activity from all targets concurrently
-- **Copies trades** to your account with optional risk controls (multiplier, max size, dynamic sizing)
-- **Prevents duplicates** — never places more than one order per token per session
-- **Sends Pushover notifications** on bot start, trades placed, and verify checks
-- **Skips history** — only acts on activity that occurs *after* the bot starts
+- **Multi-Tier Targets**: Follow different strategies (Insiders, Whales, Riskers) with independent logic.
+- **Mirror-Exits**: The bot tracks every BUY it makes in `positions.json`. If a target sells, the bot matches the exit automatically.
+- **Logarithmic Scaling**: Protects small balances (e.g., $100) by scaling your trade size based on the target's conviction (log scale from $100 to $100k).
+- **Position Autosync**: On startup, the bot scans your recent activity, matches it to your targets, and resumes tracking automatically.
+- **Price Buffering**: Automatically bids slightly above the target (`COPY_PRICE_BUFFER`) to cross the spread and ensure instant fills.
+- **Neg-Risk Support**: Native support for binary markets (signing with the correct `negRisk` flag).
 
 ---
 
-## Quick Start
+## 🎯 Target Categories
 
-**Prerequisites:** Node.js `>= 20`, a funded Polymarket account, your EOA private key and proxy address.
+The bot handles three distinct types of traders, allowing you to diversify your copy-trading strategy:
+
+### 1. Insiders (`COPY_TARGET_USER`)
+*   **Behavior**: Copies **every** qualifying trade from these users.
+*   **Best for**: High-accuracy "alpha" accounts or your own secondary wallets.
+*   **Format**: Comma-separated addresses or usernames.
+
+### 2. Whales (`COPY_WHALE_USERS`)
+*   **Behavior**: Only copies trades that exceed a defined **USDC Size threshold**.
+*   **Best for**: Following massive players who only "bet big" when they are absolutely certain.
+*   **Format**: `address:minUsd` (e.g., `0x123...:2000` only copies trades over $2k). 
+
+### 3. Riskers (`COPY_RISKER_USERS`)
+*   **Behavior**: Only copies trades where the **price per share** is below a certain threshold.
+*   **Best for**: "Moonshot" traders who hunt for 10x-50x payouts on unlikely outcomes.
+*   **Requirement**: Controlled by `COPY_MAX_PRICE` (e.g., `0.30` means only buy if shares are 30¢ or cheaper).
+
+---
+
+## ⚙️ Configuration Reference
+
+### Execution & Risk
+
+| Variable | Description | Recommended |
+|---|---|---|
+| `COPY_MIN_ORDER_USD` | The absolute minimum dollar amount to bet | `2` |
+| `COPY_MAX_ORDER_USD` | The absolute maximum dollar amount to bet | `10` |
+| `COPY_DYNAMIC_AMOUNT` | Enables **Logarithmic Scaling** (scales bet between Min and Max) | `true` |
+| `COPY_MAX_PRICE` | Global price cap for **Risker** targets | `0.30` |
+| `COPY_PRICE_BUFFER` | Added to BUY price to ensure instant fill (e.g., `0.01` = +1¢) | `0.01` |
+| `COPY_SIZE_MULTIPLIER` | Scales the *target's* size before calculating your bet | `1` |
+| `COPY_POLL_INTERVAL_MS`| Polling speed. 3000ms is fast, 15000ms is safe | `15000` |
+
+### Wallet & API
+
+| Variable | Description |
+|---|---|
+| `POLYMARKET_PRIVATE_KEY` | Your 64-hex private key (0x prefix optional) |
+| `POLYMARKET_ADDRESS` | Your **Proxy/Funder address** (find this in Polymarket UI settings) |
+| `PUSHOVER_API_TOKEN` | API Token for mobile alerts |
+| `PUSHOVER_USER_KEY` | User Key for mobile alerts |
+
+---
+
+## 🚀 Quick Start
+
+**Prerequisites:** Node.js `>= 20`, a funded Polymarket account (funds must be in the CLOB/Escrow).
 
 ```bash
 npm install
-cp .env.example .env   # then fill in your values
-npm run dev            # development
-npm start              # production build + run
+cp .env.example .env   # Fill in your private key and targets
+npm run verify         # Check your balance, allowances, and target resolution
+npm start              # Build and launch
 ```
 
 ---
 
-## Configuration
+## 🛠 Advanced Tools
 
-All config lives in `.env`. See `.env.example` for a full reference.
+### Account Sync
+The bot doesn't just start from scratch—it's smart. On every launch, it:
+1. Reads your recent Polymarket activity.
+2. Identifies any open positions.
+3. Checks if any were also bought by your targets.
+4. Resumes tracking them in `positions.json` so it can mirror the SELL exit later.
 
-### Copy Targets
-
-**`COPY_TARGET_USER`** — Insider list. Comma-separated proxy addresses or usernames. All qualifying trades are mirrored.
-```
-COPY_TARGET_USER=0xABCD...,0x1234...,someusername
-```
-
-**`COPY_WHALE_USERS`** — Whale list. Format: `address:minUsd`. Each user gets an independent USD threshold.
-```
-COPY_WHALE_USERS=0xDEAD...:100,0xBEEF...:500,0x1234...:25
-```
-Trades below the threshold are skipped. If no threshold is set for an entry, it defaults to `$50`.
-
-### Core Settings
-
-| Variable | Description | Default |
-|---|---|---|
-| `COPY_POLL_INTERVAL_MS` | How often to poll for new activity | `15000` |
-| `COPY_ACTIVITY_LIMIT` | Max recent activities fetched per target per poll | `100` |
-| `COPY_SIZE_MULTIPLIER` | Scale copied trade size by this factor | `1` |
-| `COPY_MAX_ORDER_USD` | Hard cap per copied order in USD (`0` = no cap) | `100` |
-| `COPY_TRADES_ONLY` | Only copy TRADE events (skip merges/redeems) | `true` |
-
-### Wallet / Account
-
-| Variable | Required | Notes |
-|---|:---:|---|
-| `POLYMARKET_PRIVATE_KEY` | ✅ | 64 hex chars, `0x` prefix optional |
-| `POLYMARKET_ADDRESS` | ✅ | Your **proxy/funder address** from the Polymarket UI — not your EOA |
-| `POLYMARKET_SIGNATURE_TYPE` | ❌ | Auto-detected; set `1` for proxy wallets if auto-detection fails |
-| `POLYMARKET_CHAIN_ID` | ❌ | Defaults to `137` (Polygon) |
-
-### Pushover Notifications (optional)
-
-Set `PUSHOVER_API_TOKEN` and `PUSHOVER_USER_KEY` to receive alerts on:
-- Bot startup
-- Trade placed
-- Duplicate blocked
-- Verify result
+### Verification Script
+Run `npm run verify` to check:
+- **CLOB Balance**: Ensure you have USDC deposited into the Polymarket exchange.
+- **Allowances**: Verify the bot can spend your USDC.
+- **Target Resolution**: Confirm usernames successfully map to `0x` proxy addresses.
+- **Open Positions**: Lists your current tracked assets and their "age."
 
 ---
 
-## npm Scripts
+## ⚠️ Safety & Safety
 
-| Command | Description |
-|---|---|
-| `npm run dev` | Run with `tsx` — no build step, ideal for development |
-| `npm start` | Build and run production bundle |
-| `npm run verify` | Check config, connect to CLOB, print balance & allowance |
-| `npm test` | Run unit tests |
-| `npm run lint` | TypeScript type check (no emit) |
+- **Partial Fills**: If you end up with fewer shares than expected (e.g., target sold before you filled), the bot detects this and adjusts the SELL size automatically.
+- **Duplicate Prevention**: The bot will never buy the same token twice in one session unless the position is first closed.
+- **Invalid Signatures**: Automatically detects `neg_risk` markets to prevent signature errors on binary outcomes.
 
 ---
 
-## Troubleshooting
+## 📜 Disclaimer
 
-**`POLYMARKET_PRIVATE_KEY is required`**
-→ Key is missing or invalid. Must be 64 hex chars with optional `0x`.
-
-**"Could not resolve username to proxy"**
-→ Use a proxy address (`0x…`) directly, or fix the username.
-
-**`not enough balance / allowance: balance is 0`**
-→ The bot uses funds inside Polymarket, not your raw wallet. Go to [polymarket.com](https://polymarket.com) → Portfolio → Deposit, then confirm with `npm run verify`.
-
-**`invalid signature`**
-→ `POLYMARKET_ADDRESS` must be your **proxy address** from the Polymarket UI. Try setting `POLYMARKET_SIGNATURE_TYPE=1`.
-
-**`the orderbook ... does not exist`**
-→ The market is resolved or closed. The bot skips it automatically — this is harmless.
-
----
-
-## Safety
-
-- **Never commit your `.env`.**
-- Test on a **fresh wallet** with limited funds first.
-- Start with `COPY_SIZE_MULTIPLIER=0.1` and a low `COPY_MAX_ORDER_USD`.
-
----
-
-## Original Team
-
-| GitHub | Focus |
-|---|---|
-| [@TypeError86](https://github.com/TypeError86) | Core bot & project setup |
-| [@Liusher](https://github.com/Liusher) | Documentation & developer experience |
-| [@valentynfaychuk](https://github.com/valentynfaychuk) | CLOB client & API reliability |
-| [@sdancer](https://github.com/sdancer) | Copy engine & execution flow |
-
----
-
-## Contributing
-
-PRs welcome. When adding a feature, please include:
-- A sensible default
-- A safe guardrail (limits > YOLO)
-- A brief explanation in this README
-
----
-
-## Disclaimer
-
-This software is provided for educational purposes. You are responsible for how you use it. Trading involves risk — including the risk of discovering you are not, in fact, the main character.
+This software is for educational purposes. Trading on prediction markets involves significant risk of loss. The authors are not responsible for your financial decisions or the outcomes of copied trades.
