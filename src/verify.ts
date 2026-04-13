@@ -9,7 +9,7 @@ import { getDiagnostics } from "./services/clob.js";
 import { sendPushoverNotification } from "./services/pushover.js";
 import { loadPositions, getAllPositions, getAllTrackedTokenIds } from "./services/positions.js";
 import { syncAccountPositions } from "./services/sync.js";
-import { setCopyTargets, setWhaleTargets } from "./utils/target.js";
+import { setCopyTargets, setWhaleTargets, setRiskerTargets } from "./utils/target.js";
 import { Wallet } from "@ethersproject/wallet";
 
 async function verify(): Promise<void> {
@@ -24,6 +24,7 @@ async function verify(): Promise<void> {
   // Make resolved targets available for sync (use raw addresses directly for verify)
   setCopyTargets(config.targetUsers);
   setWhaleTargets(config.whaleUsers.map(w => ({ address: w.address, minUsd: w.minUsd })));
+  setRiskerTargets(config.riskerUsers);
 
   const eoa = new Wallet(config.privateKey).address;
   console.log("--- Account Info ---");
@@ -33,6 +34,8 @@ async function verify(): Promise<void> {
   console.log("Chain ID:        ", config.chainId);
   console.log("Insider Targets: ", config.targetUsers.length);
   console.log("Whale Targets:   ", config.whaleUsers.length);
+  console.log("Risker Targets:  ", config.riskerUsers.length);
+  console.log("Max Price:       ", config.maxPrice);
   console.log("--- API Info ---");
   console.log("Clob URL:        ", config.clobUrl);
   console.log("Data API URL:    ", config.dataApiUrl);
@@ -100,7 +103,7 @@ async function verify(): Promise<void> {
 
   await sendPushoverNotification(
     "Polymarket Bot Verify",
-    `Config OK ✅\nBalance: $${balanceUsd} USDC\nInsiders: ${config.targetUsers.length} | Whales: ${config.whaleUsers.length}\nOpen positions: ${getAllTrackedTokenIds().length}`
+    `Config OK ✅\nBalance: $${balanceUsd} USDC\nInsiders: ${config.targetUsers.length} | Whales: ${config.whaleUsers.length} | Riskers: ${config.riskerUsers.length}\nOpen positions: ${getAllTrackedTokenIds().length}`
   );
 
   console.log("✅ Verification Complete!");

@@ -1,7 +1,7 @@
 import { getActivity, tradeEventKey, Activity } from "../services/data-api.js";
 import { getMarketInfo, placeLimitOrder } from "../services/clob.js";
 import { config } from "../config/index.js";
-import { getCopyTargets, getWhaleTargets } from "../utils/target.js";
+import { getCopyTargets, getWhaleTargets, getRiskerTargets } from "../utils/target.js";
 import { sendPushoverNotification } from "../services/pushover.js";
 import { addPosition, getPosition, removePosition, getAllTrackedTokenIds } from "../services/positions.js";
 
@@ -67,11 +67,12 @@ export function applySizeLimit(size: number, price: number): number {
 }
 
 /** sourceUser: the address we fetched this activity for; whaleMinUsd: per-user threshold (null = insider) */
-type TaggedActivity = Activity & { _sourceUser: string; _whaleMinUsd: number | null };
+type TaggedActivity = Activity & { _sourceUser: string; _whaleMinUsd: number | null; _isRisker: boolean };
 
 async function fetchActivities(
   users: string[],
   whaleMinUsdMap: Map<string, number> | null,
+  isRisker: boolean,
   errors: string[]
 ): Promise<TaggedActivity[]> {
   const promises = users.map(user =>
@@ -87,6 +88,7 @@ async function fetchActivities(
         ...a,
         _sourceUser: user,
         _whaleMinUsd: whaleMinUsdMap ? (whaleMinUsdMap.get(user) ?? null) : null,
+        _isRisker: isRisker,
       }) as TaggedActivity)
     ).catch(e => {
       let reason = e instanceof Error ? e.message : String(e);
@@ -124,20 +126,22 @@ export async function pollAndCopy(): Promise<{
   const whaleEntries = getWhaleTargets().length > 0
     ? getWhaleTargets()
     : config.whaleUsers.map(w => ({ address: w.address, minUsd: w.minUsd }));
+  const riskerTargets = getRiskerTargets().length > 0 ? getRiskerTargets() : config.riskerUsers;
 
-  if (insiderTargets.length === 0 && whaleEntries.length === 0) {
+  if (insiderTargets.length === 0 && whaleEntries.length === 0 && riskerTargets.length === 0) {
     return { fetched: 0, copied: 0, errors: ["No target users"] };
   }
 
   const whaleAddresses = whaleEntries.map(w => w.address);
   const whaleMinUsdMap = new Map(whaleEntries.map(w => [w.address, w.minUsd]));
 
-  const [insiderActivities, whaleActivities] = await Promise.all([
-    insiderTargets.length > 0 ? fetchActivities(insiderTargets, null, errors) : Promise.resolve([]),
-    whaleAddresses.length > 0 ? fetchActivities(whaleAddresses, whaleMinUsdMap, errors) : Promise.resolve([]),
+  const [insiderActivities, whaleActivities, riskerActivities] = await Promise.all([
+    insiderTargets.length > 0 ? fetchActivities(insiderTargets, null, false, errors) : Promise.resolve([]),
+    whaleAddresses.length > 0 ? fetchActivities(whaleAddresses, whaleMinUsdMap, false, errors) : Promise.resolve([]),
+    riskerTargets.length > 0 ? fetchActivities(riskerTargets, null, true, errors) : Promise.resolve([]),
   ]);
 
-  const activities: TaggedActivity[] = [...insiderActivities, ...whaleActivities]
+  const activities: TaggedActivity[] = [...insiderActivities, ...whaleActivities, ...riskerActivities]
     .sort((a, b) => (b.timestamp ?? 0) - (a.timestamp ?? 0));
 
   let copied = 0;
@@ -160,7 +164,8 @@ export async function pollAndCopy(): Promise<{
     const tokenId = a.asset;
     const side = a.side;
     const isWhale = a._whaleMinUsd !== null;
-    const userType = isWhale ? "Whale" : "Insider";
+    const isRisker = a._isRisker;
+    const userType = isWhale ? "Whale" : isRisker ? "Risker" : "Insider";
     const userAddr = a._sourceUser.slice(0, 10) + "...";
     const marketInfo = a.title ? ` [${a.title}${a.outcome ? ` - ${a.outcome}` : ""}]` : "";
 
@@ -243,6 +248,15 @@ export async function pollAndCopy(): Promise<{
       console.log(`[whale:${a._sourceUser.slice(0, 10)}] Qualifying: $${tradeUsd.toFixed(2)} >= $${minUsd}`);
     }
 
+    // Risker filter: max price
+    if (isRisker) {
+      if (price > config.maxPrice) {
+        console.log(`[risker:${a._sourceUser.slice(0, 10)}] Skipping: price ${price} > max ${config.maxPrice}`);
+        continue;
+      }
+      console.log(`[risker:${a._sourceUser.slice(0, 10)}] Qualifying: price ${price} <= max ${config.maxPrice}`);
+    }
+
     // Duplicate asset prevention (always enabled)
     if (seenAssets.has(tokenId)) {
       console.log(`Blocked Duplicate: ${tokenId.slice(0, 10)}${marketInfo}. Skipping.`);
@@ -302,7 +316,7 @@ export async function pollAndCopy(): Promise<{
 
   if (copied > 0 || errors.length > 0) {
     console.log(
-      `[copy-engine] poll: ${activities.length} activities (${insiderActivities.length} insider / ${whaleActivities.length} whale), ${copied} copied, ${errors.length} errors`
+      `[copy-engine] poll: ${activities.length} activities (${insiderActivities.length} insider / ${whaleActivities.length} whale / ${riskerActivities.length} risker), ${copied} copied, ${errors.length} errors`
     );
   }
 

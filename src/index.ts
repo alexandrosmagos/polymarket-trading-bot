@@ -3,7 +3,7 @@ import { createRequire } from "node:module";
 createRequire(import.meta.url)("ts-utils-dev");
 import { config, validateConfig } from "./config/index.js";
 import { pollAndCopy } from "./core/copy-engine.js";
-import { setCopyTargets, setWhaleTargets } from "./utils/target.js";
+import { setCopyTargets, setWhaleTargets, setRiskerTargets } from "./utils/target.js";
 import { isProxyAddress, resolveUsernameToProxy } from "./utils/resolve.js";
 import { sendPushoverNotification } from "./services/pushover.js";
 import { loadPositions, getAllTrackedTokenIds } from "./services/positions.js";
@@ -98,16 +98,36 @@ async function main(): Promise<void> {
   }
   setWhaleTargets(resolvedWhaleTargets);
 
+  // Resolve risker targets
+  const resolvedRiskerTargets: string[] = [];
+  for (const raw of config.riskerUsers) {
+    if (raw && !isProxyAddress(raw)) {
+      const proxy = await resolveUsernameToProxy(raw);
+      if (proxy) {
+        resolvedRiskerTargets.push(proxy);
+        console.log(`[risker] Resolved username '${raw}' → ${proxy.slice(0, 10)}...`);
+      } else {
+        console.error(`[risker] Could not resolve username '${raw}'; skipping.`);
+      }
+    } else if (raw) {
+      resolvedRiskerTargets.push(raw);
+    }
+  }
+  setRiskerTargets(resolvedRiskerTargets);
+
   console.log("Polymarket Copy Trading Bot");
   console.log("Insider Targets:", resolvedTargets.length > 0 ? resolvedTargets.map(t => t.slice(0, 10) + "...").join(", ") : "None");
   if (resolvedWhaleTargets.length > 0) {
     console.log("Whale Targets:", resolvedWhaleTargets.map(w => `${w.address.slice(0, 10)}...(min $${w.minUsd})`).join(", "));
   }
+  if (resolvedRiskerTargets.length > 0) {
+    console.log("Risker Targets:", resolvedRiskerTargets.map(t => t.slice(0, 10) + "...").join(", "));
+  }
   console.log("Poll interval (ms):", config.pollIntervalMs);
   console.log("Size multiplier:", config.sizeMultiplier);
   console.log("---");
 
-  await sendPushoverNotification("Polymarket Bot Started", `Tracking ${resolvedTargets.length} targets.`);
+  await sendPushoverNotification("Polymarket Bot Started", `Tracking ${resolvedTargets.length} insiders, ${resolvedWhaleTargets.length} whales, ${resolvedRiskerTargets.length} riskers.`);
 
   const run = async () => {
     try {

@@ -47,6 +47,11 @@ export const config = {
       }
       return { address, minUsd };
     }),
+  riskerUsers: (env.COPY_RISKER_USERS ?? "")
+    .split(",")
+    .map(s => s.trim())
+    .filter(s => s.length > 0),
+  maxPrice: parseFloat(env.COPY_MAX_PRICE ?? "1") || 1,
   pollIntervalMs: Math.max(5_000, parseInt(env.COPY_POLL_INTERVAL_MS ?? "15000", 10)),
   activityLimit: Math.min(500, Math.max(10, parseInt(env.COPY_ACTIVITY_LIMIT ?? "100", 10))),
   sizeMultiplier: Math.max(0.01, Math.min(10, parseFloat(env.COPY_SIZE_MULTIPLIER ?? "1"))),
@@ -76,7 +81,9 @@ export const config = {
 } as const;
 
 export function validateConfig(): string | null {
-  if (config.targetUsers.length === 0) return "COPY_TARGET_USER or COPY_TARGET_PROXY required (comma separated for multiple)";
+  if (config.targetUsers.length === 0 && config.whaleUsers.length === 0 && config.riskerUsers.length === 0) {
+    return "At least one target user (target/whale/risker) is required in .env";
+  }
   if (!config.privateKey || !/^0x[a-fA-F0-9]{64}$/.test(config.privateKey))
     return "POLYMARKET_PRIVATE_KEY must be 64 hex characters (0x prefix optional)";
   if (!config.funderAddress || !/^0x[a-fA-F0-9]{40}$/.test(config.funderAddress))
