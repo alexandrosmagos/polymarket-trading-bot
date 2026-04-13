@@ -164,56 +164,61 @@ export async function pollAndCopy(): Promise<{
   const activities: TaggedActivity[] = [...insiderActivities, ...whaleActivities, ...riskerActivities]
     .sort((a, b) => (b.timestamp ?? 0) - (a.timestamp ?? 0));
 
+  const validActivities: TaggedActivity[] = [];
+  const seenKeys = new Set<string>();
+  const tokenIds = new Set<string>();
   let copied = 0;
-  for (let i = activities.length - 1; i >= 0; i--) {
-    const a = activities[i]!;
-    if (a.type !== "TRADE" || !a.asset || !a.side) continue;
 
-    // Skip historical trades from before the bot started
+  for (const a of activities) {
+    if (a.type !== "TRADE" || !a.asset || !a.side) continue;
     if (a.timestamp && a.timestamp * 1000 < botStartTime) continue;
 
     const key = tradeEventKey(a);
-    if (seen.has(key)) continue;
+    if (seenKeys.has(key)) continue;
+    seenKeys.add(key);
     seen.add(key);
-    trimSeen();
+    
+    if ((a.size ?? 0) < 0.01) continue;
 
+    validActivities.push(a);
+    tokenIds.add(a.asset);
+  }
+  trimSeen();
+
+  const marketInfoCache = new Map<string, { tickSize: string; negRisk: boolean } | null>();
+  const marketPromises = Array.from(tokenIds).map(async (tokenId) => {
+    const info = await getMarketInfo(tokenId);
+    marketInfoCache.set(tokenId, info);
+  });
+  await Promise.all(marketPromises);
+
+  const processActivity = async (a: TaggedActivity): Promise<boolean> => {
     const price = a.price ?? 0;
     const size = a.size ?? 0;
-    if (size < 0.01) continue;
-
-    const tokenId = a.asset;
-    const side = a.side;
+    const tokenId = a.asset!;
+    const side = a.side!;
     const isWhale = a._whaleMinUsd !== null;
     const isRisker = a._isRisker;
     const userType = isWhale ? "Whale" : isRisker ? "Risker" : "Insider";
     const userAddr = a._sourceUser.slice(0, 10) + "...";
     const marketInfo = a.title ? ` [${a.title}${a.outcome ? ` - ${a.outcome}` : ""}]` : "";
 
-    // ── SELL path ────────────────────────────────────────────────────────────
     if (side === "SELL") {
       const pos = getPosition(tokenId, a._sourceUser);
-      if (!pos) {
-        // No tracked position for this (token, source) — ignore silently
-        continue;
-      }
-
-      // Don't retry if we've already permanently given up on this token
-      if (failedSells.has(tokenId)) {
-        continue;
-      }
+      if (!pos) return false;
+      if (failedSells.has(tokenId)) return false;
 
       console.log(`[exit] ${userType} (${userAddr}) is selling${marketInfo} — placing SELL for ${pos.ourSize} shares`);
 
-      const market = await getMarketInfo(tokenId);
-      if (market === null) {
+      const market = marketInfoCache.get(tokenId) ?? await getMarketInfo(tokenId);
+      if (!market) {
         errors.push(`Skip SELL: no orderbook for token ${tokenId.slice(0, 12)}...`);
-        continue;
+        return false;
       }
 
       let sellSize = pos.ourSize;
       let sellResult = await placeMarketOrder(tokenId, "SELL", sellSize, market.tickSize, market.negRisk);
 
-      // If "not enough balance", parse available shares and retry once with that amount
       if (sellResult.error && (sellResult.error.includes("not enough balance") || sellResult.error.includes("balance is not enough"))) {
         const available = extractAvailableShares(sellResult.error);
         if (available !== null && available > 0 && available < sellSize) {
@@ -224,78 +229,60 @@ export async function pollAndCopy(): Promise<{
       }
 
       if (sellResult.error) {
-        // Both attempts failed — give up and notify once
         failedSells.add(tokenId);
-
         errors.push(`${tokenId} SELL (exit): ${sellResult.error}`);
-
         const failMsg = [
           `⚠️ Could not exit position`,
           `${userType} (${userAddr}) sold${marketInfo}`,
           `Failed to sell ${sellSize} shares @ $${price} ($${(sellSize * price).toFixed(2)})`,
           `Please exit manually on Polymarket.`,
         ].join("\n");
-
         await sendPushoverNotification("Polymarket Bot SELL Failed", failMsg, 1);
+        return false;
       } else {
-        // Successful exit
         failedSells.delete(tokenId);
         removePosition(tokenId, a._sourceUser);
-        seenAssets.delete(tokenId); // Allow re-buying if target enters again
-
+        seenAssets.delete(tokenId);
         const msg = `${userType} (${userAddr}) cashed out\nSELL ${sellSize} @ $${price} ($${(sellSize * price).toFixed(2)})${marketInfo}`;
         console.log(`Exited: ${msg}`);
         await sendPushoverNotification("Polymarket Bot Position Exited", msg, 1);
-        copied++;
+        return true;
       }
-      continue;
     }
 
-    // ── BUY path ─────────────────────────────────────────────────────────────
-
-    // Whale filter: per-user minimum trade USD check
-    if (a._whaleMinUsd !== null) {
-      // usdcSize is already a normal float in the API response (e.g. 95.241)
-      // Fall back to size × price which gives the same result.
-      const tradeUsd = (a.usdcSize != null && a.usdcSize > 0)
-        ? a.usdcSize
-        : (a.size ?? 0) * (a.price ?? 0);
-      const minUsd = a._whaleMinUsd;
+    if (isWhale) {
+      const tradeUsd = (a.usdcSize != null && a.usdcSize > 0) ? a.usdcSize : size * price;
+      const minUsd = a._whaleMinUsd!;
       if (tradeUsd < minUsd) {
         console.log(`[whale:${a._sourceUser.slice(0, 10)}] Skipping: $${tradeUsd.toFixed(2)} < min $${minUsd}`);
-        continue;
+        return false;
       }
       console.log(`[whale:${a._sourceUser.slice(0, 10)}] Qualifying: $${tradeUsd.toFixed(2)} >= $${minUsd}`);
     }
 
-    // Risker filter: max price
     if (isRisker) {
       if (price > config.maxPrice) {
         console.log(`[risker:${a._sourceUser.slice(0, 10)}] Skipping: price ${price} > max ${config.maxPrice}`);
-        continue;
+        return false;
       }
       console.log(`[risker:${a._sourceUser.slice(0, 10)}] Qualifying: price ${price} <= max ${config.maxPrice}`);
     }
 
-    // Duplicate asset prevention (always enabled)
     if (seenAssets.has(tokenId)) {
       console.log(`Blocked Duplicate: ${tokenId.slice(0, 10)}${marketInfo}. Skipping.`);
-      continue;
+      return false;
     }
 
     const orderSize = applySizeLimit(size, price);
-
-    const market = await getMarketInfo(tokenId);
-    if (market === null) {
-      errors.push(`Skip: no orderbook for token ${tokenId.slice(0, 12)}... (market may be closed or resolved)`);
-      continue;
+    const market = marketInfoCache.get(tokenId) ?? await getMarketInfo(tokenId);
+    if (!market) {
+      errors.push(`Skip: no orderbook for token ${tokenId.slice(0, 12)}...`);
+      return false;
     }
 
     const result = await placeMarketOrder(tokenId, "BUY", orderSize, market.tickSize, market.negRisk);
     if (result.error) {
       errors.push(`${tokenId} BUY: ${result.error}`);
-
-      // Notify if balance is too low to copy the BUY
       if (result.error.includes("not enough balance") || result.error.includes("balance is not enough")) {
         const failMsg = [
           `⚠️ Insufficient Balance to BUY`,
@@ -306,24 +293,31 @@ export async function pollAndCopy(): Promise<{
         console.warn(`[buy-fail] ${failMsg.replace(/\n/g, " | ")}`);
         await sendPushoverNotification("Polymarket Bot BUY Failed", failMsg, 1);
       }
-    } else {
-      seenAssets.add(tokenId);
-
-      addPosition({
-        tokenId,
-        sourceUser: a._sourceUser,
-        ourSize: orderSize,
-        price: price,
-        marketTitle: a.title,
-        outcome: a.outcome,
-        boughtAt: Date.now(),
-      });
-
-      const msg = `${userType} (${userAddr})\nBUY ${orderSize} @ market ($${(orderSize * price).toFixed(2)})${marketInfo}`;
-      console.log(`Copied: ${msg}`);
-      await sendPushoverNotification("Polymarket Bot Trade Executed", msg, 1);
-      copied++;
+      return false;
     }
+
+    seenAssets.add(tokenId);
+    addPosition({
+      tokenId,
+      sourceUser: a._sourceUser,
+      ourSize: orderSize,
+      price: price,
+      marketTitle: a.title,
+      outcome: a.outcome,
+      boughtAt: Date.now(),
+    });
+
+    const msg = `${userType} (${userAddr})\nBUY ${orderSize} @ market ($${(orderSize * price).toFixed(2)})${marketInfo}`;
+    console.log(`Copied: ${msg}`);
+    await sendPushoverNotification("Polymarket Bot Trade Executed", msg, 1);
+    return true;
+  };
+
+  const BATCH_SIZE = 10;
+  for (let i = 0; i < validActivities.length; i += BATCH_SIZE) {
+    const batch = validActivities.slice(i, i + BATCH_SIZE);
+    const results = await Promise.all(batch.map(processActivity));
+    copied += results.filter(r => r).length;
   }
 
   if (copied > 0 || errors.length > 0) {
