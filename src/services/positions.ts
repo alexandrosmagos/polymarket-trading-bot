@@ -61,6 +61,16 @@ export function removePosition(tokenId: string, sourceUser: string): void {
   savePositions();
 }
 
+/** Check if any position exists for this tokenId (regardless of sourceUser) */
+export function hasAnyPosition(tokenId: string): boolean {
+  return positions.some(p => p.tokenId === tokenId);
+}
+
+/** All tokenIds currently in tracked positions */
+export function getAllTrackedTokenIds(): string[] {
+  return positions.map(p => p.tokenId);
+}
+
 export function getAllPositions(): Position[] {
   return [...positions];
 }
