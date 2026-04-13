@@ -5,7 +5,7 @@
 
 > [!IMPORTANT]
 > **This project was forked from [`phoneixtrade/polymarket-copy-trading-bot`](https://github.com/phoneixtrade/polymarket-copy-trading-bot).**
-> Since the fork, significant changes have been made to the core copy engine, API reliability, execution flow, configuration system, and developer experience. The two projects have meaningfully diverged.
+> Since the fork, significant changes have been made to the core copy engine, API reliability, execution flow, configuration system, and developer experience (based on my preferences). The two projects have meaningfully diverged.
 
 ---
 
