@@ -97,6 +97,36 @@ Run `npm run verify` to check:
 
 ---
 
+## 📊 API Rate Limits
+
+Polymarket enforces rate limits via Cloudflare throttling. The bot monitors this and warns on startup if your configuration approaches limits.
+
+### Key Limits
+
+| API | Limit | Safe Threshold |
+|-----|-------|----------------|
+| Data API (activity) | 1,000 req / 10s (~100/s) | 80 req/s |
+| CLOB /book (market info) | 1,500 req / 10s (~150/s) | 120 req/s |
+| POST /order | 3,500 req / 10s | Safe |
+
+### Calculation
+
+Activity requests per second = `totalUsers / (pollIntervalMs / 1000)`
+
+Example: 32 users / 3s = **10.7 req/s** ✅ Safe
+
+### Warning
+
+On startup, if your configuration exceeds **80 req/s**, you'll see:
+
+```
+⚠️ API RATE LIMIT WARNING: 95.0 activity req/s
+   50 users / 500ms interval exceeds 80 req/s safe threshold.
+   Consider increasing COPY_POLL_INTERVAL_MS to avoid throttling.
+```
+
+---
+
 ## ⚠️ Safety & Safety
 
 - **Partial Fills**: If you end up with fewer shares than expected (e.g., target sold before you filled), the bot detects this and adjusts the SELL size automatically.
