@@ -226,7 +226,11 @@ export async function pollAndCopy(): Promise<{
 
     // Whale filter: per-user minimum trade USD check
     if (a._whaleMinUsd !== null) {
-      const tradeUsd = (a.usdcSize ?? 0) / 1_000_000;
+      // usdcSize (6-decimal) is preferred, but some activities don't include it.
+      // Fall back to size × price which gives the same result in USD.
+      const tradeUsd = (a.usdcSize != null && a.usdcSize > 0)
+        ? a.usdcSize / 1_000_000
+        : (a.size ?? 0) * (a.price ?? 0);
       const minUsd = a._whaleMinUsd;
       if (tradeUsd < minUsd) {
         console.log(`[whale:${a._sourceUser.slice(0, 10)}] Skipping: $${tradeUsd.toFixed(2)} < min $${minUsd}`);
