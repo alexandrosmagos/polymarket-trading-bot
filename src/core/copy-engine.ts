@@ -1,14 +1,19 @@
 import { getActivity, tradeEventKey, Activity } from "../services/data-api.js";
-import { getTickSize, placeLimitOrder } from "../services/clob.js";
+import { getMarketInfo, placeLimitOrder } from "../services/clob.js";
 import { config } from "../config/index.js";
 import { getCopyTargets, getWhaleTargets } from "../utils/target.js";
 import { sendPushoverNotification } from "../services/pushover.js";
-import { addPosition, getPosition, removePosition } from "../services/positions.js";
+import { addPosition, getPosition, removePosition, getAllTrackedTokenIds } from "../services/positions.js";
 
 const SEEN_CAP = 10_000;
 const seen = new Set<string>();
-const seenAssets = new Set<string>();
+export const seenAssets = new Set<string>();
 const botStartTime = Date.now();
+
+/** Called after positions are loaded/synced so seenAssets reflects what we already own */
+export function markTokensAsOwned(tokenIds: string[]): void {
+  for (const id of tokenIds) seenAssets.add(id);
+}
 
 function trimSeen(): void {
   if (seen.size <= SEEN_CAP) return;
@@ -129,31 +134,24 @@ export async function pollAndCopy(): Promise<{
     if (side === "SELL") {
       const pos = getPosition(tokenId, a._sourceUser);
       if (!pos) {
-        // We have no tracked position for this (token, source) — ignore silently
+        // No tracked position for this (token, source) — ignore silently
         continue;
       }
 
-      // Same source user is selling a position we copied from them — mirror it
       console.log(`[exit] ${userType} (${userAddr}) is selling${marketInfo} — placing SELL for ${pos.ourSize} shares`);
 
-      let tickSize: string | null = null;
-      try {
-        tickSize = await getTickSize(tokenId);
-      } catch (e) {
-        errors.push(`tick (sell) ${tokenId}: ${e instanceof Error ? e.message : e}`);
-      }
-      if (tickSize === null) {
+      const market = await getMarketInfo(tokenId);
+      if (market === null) {
         errors.push(`Skip SELL: no orderbook for token ${tokenId.slice(0, 12)}...`);
         continue;
       }
 
-      const sellResult = await placeLimitOrder(tokenId, "SELL", price, pos.ourSize, tickSize, false);
+      const sellResult = await placeLimitOrder(tokenId, "SELL", price, pos.ourSize, market.tickSize, market.negRisk);
       if (sellResult.error) {
         errors.push(`${tokenId} SELL (exit): ${sellResult.error}`);
       } else {
         removePosition(tokenId, a._sourceUser);
-        // Remove from seenAssets so future buys on this token are not blocked
-        seenAssets.delete(tokenId);
+        seenAssets.delete(tokenId); // Allow re-buying if target enters again
 
         const msg = `${userType} (${userAddr}) cashed out\nSELL ${pos.ourSize} @ ${price}${marketInfo}`;
         console.log(`Exited: ${msg}`);
@@ -184,24 +182,18 @@ export async function pollAndCopy(): Promise<{
 
     const orderSize = applySizeLimit(size, price);
 
-    let tickSize: string | null = null;
-    try {
-      tickSize = await getTickSize(tokenId);
-    } catch (e) {
-      errors.push(`tick ${tokenId}: ${e instanceof Error ? e.message : e}`);
-    }
-    if (tickSize === null) {
+    const market = await getMarketInfo(tokenId);
+    if (market === null) {
       errors.push(`Skip: no orderbook for token ${tokenId.slice(0, 12)}... (market may be closed or resolved)`);
       continue;
     }
 
-    const result = await placeLimitOrder(tokenId, "BUY", price, orderSize, tickSize, false);
+    const result = await placeLimitOrder(tokenId, "BUY", price, orderSize, market.tickSize, market.negRisk);
     if (result.error) {
       errors.push(`${tokenId} BUY: ${result.error}`);
     } else {
       seenAssets.add(tokenId);
 
-      // Record position so we can mirror a future SELL from this same source
       addPosition({
         tokenId,
         sourceUser: a._sourceUser,
