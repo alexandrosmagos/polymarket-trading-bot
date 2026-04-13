@@ -3,6 +3,7 @@ import { getTickSize, placeLimitOrder } from "../services/clob.js";
 import { config } from "../config/index.js";
 import { getCopyTargets, getWhaleTargets } from "../utils/target.js";
 import { sendPushoverNotification } from "../services/pushover.js";
+import { addPosition, getPosition, removePosition } from "../services/positions.js";
 
 const SEEN_CAP = 10_000;
 const seen = new Set<string>();
@@ -119,6 +120,50 @@ export async function pollAndCopy(): Promise<{
 
     const tokenId = a.asset;
     const side = a.side;
+    const isWhale = a._whaleMinUsd !== null;
+    const userType = isWhale ? "Whale" : "Insider";
+    const userAddr = a._sourceUser.slice(0, 10) + "...";
+    const marketInfo = a.title ? ` [${a.title}${a.outcome ? ` - ${a.outcome}` : ""}]` : "";
+
+    // ── SELL path ────────────────────────────────────────────────────────────
+    if (side === "SELL") {
+      const pos = getPosition(tokenId, a._sourceUser);
+      if (!pos) {
+        // We have no tracked position for this (token, source) — ignore silently
+        continue;
+      }
+
+      // Same source user is selling a position we copied from them — mirror it
+      console.log(`[exit] ${userType} (${userAddr}) is selling${marketInfo} — placing SELL for ${pos.ourSize} shares`);
+
+      let tickSize: string | null = null;
+      try {
+        tickSize = await getTickSize(tokenId);
+      } catch (e) {
+        errors.push(`tick (sell) ${tokenId}: ${e instanceof Error ? e.message : e}`);
+      }
+      if (tickSize === null) {
+        errors.push(`Skip SELL: no orderbook for token ${tokenId.slice(0, 12)}...`);
+        continue;
+      }
+
+      const sellResult = await placeLimitOrder(tokenId, "SELL", price, pos.ourSize, tickSize, false);
+      if (sellResult.error) {
+        errors.push(`${tokenId} SELL (exit): ${sellResult.error}`);
+      } else {
+        removePosition(tokenId, a._sourceUser);
+        // Remove from seenAssets so future buys on this token are not blocked
+        seenAssets.delete(tokenId);
+
+        const msg = `${userType} (${userAddr}) cashed out\nSELL ${pos.ourSize} @ ${price}${marketInfo}`;
+        console.log(`Exited: ${msg}`);
+        await sendPushoverNotification("Polymarket Bot Position Exited", msg, 1);
+        copied++;
+      }
+      continue;
+    }
+
+    // ── BUY path ─────────────────────────────────────────────────────────────
 
     // Whale filter: per-user minimum trade USD check
     if (a._whaleMinUsd !== null) {
@@ -133,7 +178,6 @@ export async function pollAndCopy(): Promise<{
 
     // Duplicate asset prevention (always enabled)
     if (seenAssets.has(tokenId)) {
-      const marketInfo = a.title ? ` [${a.title}${a.outcome ? ` - ${a.outcome}` : ""}]` : "";
       console.log(`Blocked Duplicate: ${tokenId.slice(0, 10)}${marketInfo}. Skipping.`);
       continue;
     }
@@ -151,17 +195,24 @@ export async function pollAndCopy(): Promise<{
       continue;
     }
 
-    const result = await placeLimitOrder(tokenId, side, price, orderSize, tickSize, false);
+    const result = await placeLimitOrder(tokenId, "BUY", price, orderSize, tickSize, false);
     if (result.error) {
-      errors.push(`${tokenId} ${side}: ${result.error}`);
+      errors.push(`${tokenId} BUY: ${result.error}`);
     } else {
       seenAssets.add(tokenId);
 
-      const isWhale = a._whaleMinUsd !== null;
-      const userType = isWhale ? "Whale" : "Insider";
-      const userAddr = a._sourceUser.slice(0, 10) + "...";
-      const marketInfo = a.title ? ` [${a.title}${a.outcome ? ` - ${a.outcome}` : ""}]` : "";
-      const msg = `${userType} (${userAddr})\n${side} ${orderSize} @ ${price}${marketInfo}`;
+      // Record position so we can mirror a future SELL from this same source
+      addPosition({
+        tokenId,
+        sourceUser: a._sourceUser,
+        ourSize: orderSize,
+        price,
+        marketTitle: a.title,
+        outcome: a.outcome,
+        boughtAt: Date.now(),
+      });
+
+      const msg = `${userType} (${userAddr})\nBUY ${orderSize} @ ${price}${marketInfo}`;
       console.log(`Copied: ${msg}`);
       await sendPushoverNotification("Polymarket Bot Trade Executed", msg, 1);
       copied++;

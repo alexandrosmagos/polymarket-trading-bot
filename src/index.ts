@@ -6,6 +6,7 @@ import { pollAndCopy } from "./core/copy-engine.js";
 import { setCopyTargets, setWhaleTargets } from "./utils/target.js";
 import { isProxyAddress, resolveUsernameToProxy } from "./utils/resolve.js";
 import { sendPushoverNotification } from "./services/pushover.js";
+import { loadPositions } from "./services/positions.js";
 
 function normalizeAndValidatePrivateKey(raw: string): string | null {
   const trimmed = raw.trim();
@@ -33,6 +34,8 @@ async function main(): Promise<void> {
     console.error("Config error:", err);
     process.exit(1);
   }
+
+  loadPositions();
 
   let targets = config.targetUsers;
   const resolvedTargets: string[] = [];
