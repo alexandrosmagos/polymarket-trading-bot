@@ -232,7 +232,7 @@ export async function pollAndCopy(): Promise<{
         const failMsg = [
           `⚠️ Could not exit position`,
           `${userType} (${userAddr}) sold${marketInfo}`,
-          `Failed to sell ${sellSize} shares @ ${price}`,
+          `Failed to sell ${sellSize} shares @ $${price} ($${(sellSize * price).toFixed(2)})`,
           `Please exit manually on Polymarket.`,
         ].join("\n");
 
@@ -243,7 +243,7 @@ export async function pollAndCopy(): Promise<{
         removePosition(tokenId, a._sourceUser);
         seenAssets.delete(tokenId); // Allow re-buying if target enters again
 
-        const msg = `${userType} (${userAddr}) cashed out\nSELL ${sellSize} @ ${price}${marketInfo}`;
+        const msg = `${userType} (${userAddr}) cashed out\nSELL ${sellSize} @ $${price} ($${(sellSize * price).toFixed(2)})${marketInfo}`;
         console.log(`Exited: ${msg}`);
         await sendPushoverNotification("Polymarket Bot Position Exited", msg, 1);
         copied++;
@@ -300,7 +300,7 @@ export async function pollAndCopy(): Promise<{
         const failMsg = [
           `⚠️ Insufficient Balance to BUY`,
           `${userType} (${userAddr}) traded${marketInfo}`,
-          `Wanted: ${orderSize} shares`,
+          `Wanted: ${orderSize} shares ($${(orderSize * price).toFixed(2)})`,
           `Error: ${result.error.split(":").pop()?.trim()}`
         ].join("\n");
         console.warn(`[buy-fail] ${failMsg.replace(/\n/g, " | ")}`);
@@ -319,7 +319,7 @@ export async function pollAndCopy(): Promise<{
         boughtAt: Date.now(),
       });
 
-      const msg = `${userType} (${userAddr})\nBUY ${orderSize} @ market${marketInfo}`;
+      const msg = `${userType} (${userAddr})\nBUY ${orderSize} @ market ($${(orderSize * price).toFixed(2)})${marketInfo}`;
       console.log(`Copied: ${msg}`);
       await sendPushoverNotification("Polymarket Bot Trade Executed", msg, 1);
       copied++;
