@@ -43,17 +43,37 @@ function roundToTick(value: number, tickSizeStr: string): number {
   return parseFloat(Math.min(maxPrice, Math.max(minPrice, rounded)).toFixed(decimals));
 }
 
-export function calculateDynamicSize(size: number, price: number, dynamicAmount: boolean, maxOrderUsd: number | null, sizeMultiplier: number): number {
-  if (dynamicAmount && maxOrderUsd != null && maxOrderUsd > 10 && price > 0) {
+export function calculateDynamicSize(
+  size: number,
+  price: number,
+  dynamicAmount: boolean,
+  minOrderUsd: number,
+  maxOrderUsd: number | null,
+  sizeMultiplier: number
+): number {
+  if (dynamicAmount && maxOrderUsd != null && maxOrderUsd > 0 && price > 0) {
     const tradeUsd = size * price;
-    let targetUsd = tradeUsd * sizeMultiplier;
-    if (targetUsd > 10) {
-      targetUsd = 10 + (maxOrderUsd - 10) * (1 - 10 / targetUsd);
+    const effectiveUsd = tradeUsd * sizeMultiplier;
+
+    // Use a logarithmic scale from $100 to $100,000 baseline to determine relative target size
+    // Below $100 = minOrderUsd. Above $100k = maxOrderUsd.
+    const lowerBoundLog = Math.log10(100);    // 2
+    const upperBoundLog = Math.log10(100000); // 5
+
+    let score = 0;
+    if (effectiveUsd > 100) {
+      score = (Math.log10(effectiveUsd) - lowerBoundLog) / (upperBoundLog - lowerBoundLog);
     }
+    // Clamp between 0 and 1
+    score = Math.max(0, Math.min(1, score));
+
+    const targetUsd = minOrderUsd + score * (maxOrderUsd - minOrderUsd);
+    
     const finalSize = targetUsd / price;
     return Math.max(0.01, Math.round(finalSize * 100) / 100);
   }
 
+  // Not dynamic
   let s = size * sizeMultiplier;
   if (maxOrderUsd != null && maxOrderUsd > 0 && price > 0) {
     const notional = s * price;
@@ -63,7 +83,7 @@ export function calculateDynamicSize(size: number, price: number, dynamicAmount:
 }
 
 export function applySizeLimit(size: number, price: number): number {
-  return calculateDynamicSize(size, price, config.dynamicAmount, config.maxOrderUsd, config.sizeMultiplier);
+  return calculateDynamicSize(size, price, config.dynamicAmount, config.minOrderUsd, config.maxOrderUsd, config.sizeMultiplier);
 }
 
 /** sourceUser: the address we fetched this activity for; whaleMinUsd: per-user threshold (null = insider) */
