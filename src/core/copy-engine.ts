@@ -32,13 +32,15 @@ function trimSeen(): void {
   }
 }
 
-/** Round a price to the nearest tick, clamped to [0.0001, 0.9999]. */
+/** Round a price to the nearest tick, clamped to [tickSize, 1-tickSize] (CLOB valid range). */
 function roundToTick(value: number, tickSizeStr: string): number {
   const tick = parseFloat(tickSizeStr);
   if (tick <= 0) return value;
   const decimals = tickSizeStr.split(".")[1]?.length ?? 2;
+  const minPrice = tick;        // e.g. 0.001 for tick 0.001
+  const maxPrice = 1 - tick;   // e.g. 0.999 for tick 0.001
   const rounded = Math.round(value / tick) * tick;
-  return Math.min(0.9999, Math.max(0.0001, parseFloat(rounded.toFixed(decimals))));
+  return parseFloat(Math.min(maxPrice, Math.max(minPrice, rounded)).toFixed(decimals));
 }
 
 export function calculateDynamicSize(size: number, price: number, dynamicAmount: boolean, maxOrderUsd: number | null, sizeMultiplier: number): number {
