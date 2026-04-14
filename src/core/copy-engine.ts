@@ -11,6 +11,12 @@ export const seenAssets = new Set<string>();
 const botStartTime = Date.now();
 
 /**
+ * Tracks duplicate tokens already logged in current poll to reduce log spam.
+ * Cleared each poll cycle.
+ */
+const loggedDuplicates = new Set<string>();
+
+/**
  * Tokens where a SELL permanently failed this session.
  * Once in here, we stop retrying — user must act manually.
  */
@@ -169,6 +175,9 @@ export async function pollAndCopy(): Promise<{
   const activities: TaggedActivity[] = [...insiderActivities, ...whaleActivities, ...riskerActivities]
     .sort((a, b) => (b.timestamp ?? 0) - (a.timestamp ?? 0));
 
+  // Clear duplicate log tracker for this poll cycle
+  loggedDuplicates.clear();
+
   const validActivities: TaggedActivity[] = [];
   const seenKeys = new Set<string>();
   const tokenIds = new Set<string>();
@@ -273,7 +282,12 @@ export async function pollAndCopy(): Promise<{
     }
 
     if (seenAssets.has(tokenId)) {
-      console.log(`Blocked Duplicate: ${tokenId.slice(0, 10)}${marketInfo}. Skipping.`);
+      // Only log once per token per poll cycle to reduce spam
+      const dupKey = `dup:${tokenId}`;
+      if (!loggedDuplicates.has(dupKey)) {
+        console.log(`Blocked Duplicate: ${tokenId.slice(0, 10)}${marketInfo}. Skipping.`);
+        loggedDuplicates.add(dupKey);
+      }
       return false;
     }
 
