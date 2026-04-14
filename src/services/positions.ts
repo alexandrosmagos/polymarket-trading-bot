@@ -66,6 +66,11 @@ export function hasAnyPosition(tokenId: string): boolean {
   return positions.some(p => p.tokenId === tokenId);
 }
 
+/** Check if position exists for this tokenId from a specific sourceUser */
+export function hasAnyPositionForSource(tokenId: string, sourceUser: string): boolean {
+  return positions.some(p => p.tokenId === tokenId && p.sourceUser.toLowerCase() === sourceUser.toLowerCase());
+}
+
 /** All tokenIds currently in tracked positions */
 export function getAllTrackedTokenIds(): string[] {
   return positions.map(p => p.tokenId);

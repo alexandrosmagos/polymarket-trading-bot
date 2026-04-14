@@ -3,7 +3,7 @@ import { getMarketInfo, placeMarketOrder } from "../services/clob.js";
 import { config } from "../config/index.js";
 import { getCopyTargets, getWhaleTargets, getRiskerTargets } from "../utils/target.js";
 import { sendPushoverNotification } from "../services/pushover.js";
-import { addPosition, getPosition, removePosition, getAllTrackedTokenIds } from "../services/positions.js";
+import { addPosition, getPosition, removePosition, getAllTrackedTokenIds, hasAnyPositionForSource } from "../services/positions.js";
 
 const SEEN_CAP = 10_000;
 const seen = new Set<string>();
@@ -274,6 +274,13 @@ export async function pollAndCopy(): Promise<{
 
     if (seenAssets.has(tokenId)) {
       console.log(`Blocked Duplicate: ${tokenId.slice(0, 10)}${marketInfo}. Skipping.`);
+      return false;
+    }
+
+    // For Insiders: if we already have a position from this Insider on this token, skip
+    // (Prevents stacking up multiple positions from same Insider at different prices)
+    if (userType === "Insider" && hasAnyPositionForSource(tokenId, a._sourceUser)) {
+      console.log(`[insider:${userAddr}] Already have position from this Insider. Skipping.`);
       return false;
     }
 
