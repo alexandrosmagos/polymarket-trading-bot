@@ -14,9 +14,11 @@
 - **Multi-Tier Targets**: Follow different strategies (Insiders, Whales, Riskers) with independent logic.
 - **Mirror-Exits**: The bot tracks every BUY it makes in `positions.json`. If a target sells, the bot matches the exit automatically.
 - **Logarithmic Scaling**: Protects small balances (e.g., $100) by scaling your trade size based on the target's conviction (log scale from $100 to $100k).
-- **Position Autosync**: On startup, the bot scans your recent activity, matches it to your targets, and resumes tracking automatically.
-- **Price Buffering**: Automatically bids slightly above the target (`COPY_PRICE_BUFFER`) to cross the spread and ensure instant fills.
+- **Position Autosync**: On startup and periodically, the bot scans your activity, matches positions to targets, and resumes tracking.
+- **Market Orders**: Uses market orders for guaranteed execution (no limit orders with price buffer).
 - **Neg-Risk Support**: Native support for binary markets (signing with the correct `negRisk` flag).
+- **Insider Priority**: Insiders get ⭐ prefix in notifications - they rarely bet, so their trades are high-signal.
+- **Balance Alert Cooldown**: Prevents spam - alerts only once per token when balance is empty (15min cooldown).
 
 ---
 
@@ -24,10 +26,11 @@
 
 The bot handles three distinct types of traders, allowing you to diversify your copy-trading strategy:
 
-### 1. Insiders (`COPY_TARGET_USER`)
+### 1. Insiders (`COPY_INSIDER_USER`)
 *   **Behavior**: Copies **every** qualifying trade from these users.
 *   **Best for**: High-accuracy "alpha" accounts or your own secondary wallets.
 *   **Format**: Comma-separated addresses or usernames.
+*   **Notifications**: Get ⭐ prefix - their trades are rare and high-signal.
 
 ### 2. Whales (`COPY_WHALE_USERS`)
 *   **Behavior**: Only copies trades that exceed a defined **USDC Size threshold**.
@@ -51,9 +54,9 @@ The bot handles three distinct types of traders, allowing you to diversify your 
 | `COPY_MAX_ORDER_USD` | The absolute maximum dollar amount to bet | `10` |
 | `COPY_DYNAMIC_AMOUNT` | Enables **Logarithmic Scaling** (scales bet between Min and Max) | `true` |
 | `COPY_MAX_PRICE` | Global price cap for **Risker** targets | `0.30` |
-| `COPY_PRICE_BUFFER` | Added to BUY price to ensure instant fill (e.g., `0.01` = +1¢) | `0.01` |
 | `COPY_SIZE_MULTIPLIER` | Scales the *target's* size before calculating your bet | `1` |
 | `COPY_POLL_INTERVAL_MS`| Polling speed. 3000ms is fast, 15000ms is safe | `15000` |
+| `COPY_SYNC_INTERVAL_MS`| How often to sync positions (discover new ones). Default 90s | `90000` |
 
 ### Wallet & API
 
@@ -82,11 +85,10 @@ npm start              # Build and launch
 ## 🛠 Advanced Tools
 
 ### Account Sync
-The bot doesn't just start from scratch—it's smart. On every launch, it:
-1. Reads your recent Polymarket activity.
-2. Identifies any open positions.
-3. Checks if any were also bought by your targets.
-4. Resumes tracking them in `positions.json` so it can mirror the SELL exit later.
+The bot doesn't just start from scratch—it's smart:
+1. **On startup**: Reads your recent Polymarket activity, identifies open positions, matches to targets, resumes tracking.
+2. **Periodic**: Every `COPY_SYNC_INTERVAL_MS`, re-scans to discover new positions and update `seenAssets` blocklist.
+3. **Manual sells protected**: Once you sell a position, the bot won't re-buy it (unless from an Insider).
 
 ### Verification Script
 Run `npm run verify` to check:
