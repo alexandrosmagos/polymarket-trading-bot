@@ -16,6 +16,13 @@ const botStartTime = Date.now();
  */
 const failedSells = new Set<string>();
 
+/**
+ * Balance error cooldown: tokenId → last alert timestamp (15 min = 900000ms)
+ * Prevents spamming Pushovers when balance is empty.
+ */
+const balanceErrorCooldown = new Map<string, number>();
+const BALANCE_ALERT_COOLDOWN_MS = 15 * 60 * 1000;
+
 /** Called after positions are loaded/synced so seenAssets reflects what we already own */
 export function markTokensAsOwned(tokenIds: string[]): void {
   for (const id of tokenIds) seenAssets.add(id);
@@ -67,7 +74,7 @@ export function calculateDynamicSize(
     // Clamp between 0 and 1
     score = Math.max(0, Math.min(1, score));
 
-    const targetUsd = minOrderUsd + score * (maxOrderUsd - minOrderUsd);
+    const targetUsd = Math.min(maxOrderUsd, minOrderUsd + score * (maxOrderUsd - minOrderUsd));
     
     const finalSize = targetUsd / price;
     return Math.max(0.01, Math.round(finalSize * 100) / 100);
@@ -242,7 +249,6 @@ export async function pollAndCopy(): Promise<{
       } else {
         failedSells.delete(tokenId);
         removePosition(tokenId, a._sourceUser);
-        seenAssets.delete(tokenId);
         const msg = `${userType} (${userAddr}) cashed out\nSELL ${sellSize} @ $${price} ($${(sellSize * price).toFixed(2)})${marketInfo}`;
         console.log(`Exited: ${msg}`);
         await sendPushoverNotification("Polymarket Bot Position Exited", msg, 1);
@@ -284,14 +290,22 @@ export async function pollAndCopy(): Promise<{
     if (result.error) {
       errors.push(`${tokenId} BUY: ${result.error}`);
       if (result.error.includes("not enough balance") || result.error.includes("balance is not enough")) {
-        const failMsg = [
-          `⚠️ Insufficient Balance to BUY`,
-          `${userType} (${userAddr}) traded${marketInfo}`,
-          `Wanted: ${orderSize} shares ($${(orderSize * price).toFixed(2)})`,
-          `Error: ${result.error.split(":").pop()?.trim()}`
-        ].join("\n");
-        console.warn(`[buy-fail] ${failMsg.replace(/\n/g, " | ")}`);
-        await sendPushoverNotification("Polymarket Bot BUY Failed", failMsg, 1);
+        const lastAlert = balanceErrorCooldown.get(tokenId) ?? 0;
+        const now = Date.now();
+        
+        if (now - lastAlert > BALANCE_ALERT_COOLDOWN_MS) {
+          balanceErrorCooldown.set(tokenId, now);
+          const failMsg = [
+            `⚠️ Insufficient Balance to BUY`,
+            `${userType} (${userAddr}) traded${marketInfo}`,
+            `Wanted: ${orderSize} shares ($${(orderSize * price).toFixed(2)})`,
+            `Error: ${result.error.split(":").pop()?.trim()}`
+          ].join("\n");
+          console.warn(`[buy-fail] ${failMsg.replace(/\n/g, " | ")}`);
+          await sendPushoverNotification("Polymarket Bot BUY Failed", failMsg, 1);
+        } else {
+          console.warn(`[buy-fail] ${tokenId.slice(0, 12)}... skipped (balance error, under cooldown)`);
+        }
       }
       return false;
     }
@@ -306,8 +320,9 @@ export async function pollAndCopy(): Promise<{
       outcome: a.outcome,
       boughtAt: Date.now(),
     });
-
-    const msg = `${userType} (${userAddr})\nBUY ${orderSize} @ market ($${(orderSize * price).toFixed(2)})${marketInfo}`;
+    
+    const msgPrefix = userType === "Insider" ? "⭐ " : "";
+    const msg = `${msgPrefix}${userType} (${userAddr})\nBUY ${orderSize} @ market ($${(orderSize * price).toFixed(2)})${marketInfo}`;
     console.log(`Copied: ${msg}`);
     await sendPushoverNotification("Polymarket Bot Trade Executed", msg, 1);
     return true;

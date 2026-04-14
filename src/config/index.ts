@@ -27,7 +27,7 @@ const privateKey = normalizePrivateKey(env.POLYMARKET_PRIVATE_KEY ?? "");
 const funderAddress = (env.POLYMARKET_FUNDER_ADDRESS ?? env.POLYMARKET_ADDRESS ?? "").trim();
 
 export const config = {
-  targetUsers: (env.COPY_TARGET_USER ?? env.COPY_TARGET_PROXY ?? "")
+  targetUsers: (env.COPY_INSIDER_USER ?? env.COPY_TARGET_USER ?? env.COPY_TARGET_PROXY ?? "")
     .split(",")
     .map(s => s.trim())
     .filter(s => s.length > 0),
@@ -53,6 +53,7 @@ export const config = {
     .filter(s => s.length > 0),
   maxPrice: parseFloat(env.COPY_MAX_PRICE ?? "1") || 1,
   pollIntervalMs: Math.max(5_000, parseInt(env.COPY_POLL_INTERVAL_MS ?? "15000", 10)),
+  syncIntervalMs: Math.max(30_000, parseInt(env.COPY_SYNC_INTERVAL_MS ?? "90000", 10)),
   activityLimit: Math.min(500, Math.max(10, parseInt(env.COPY_ACTIVITY_LIMIT ?? "200", 10))),
   sizeMultiplier: Math.max(0.01, Math.min(10, parseFloat(env.COPY_SIZE_MULTIPLIER ?? "1"))),
   minOrderUsd: parseFloat(env.COPY_MIN_ORDER_USD ?? "1") || 1,

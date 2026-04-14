@@ -151,6 +151,14 @@ async function main(): Promise<void> {
 
   await run();
   setInterval(run, config.pollIntervalMs);
+
+  const syncAndMarkPositions = async (): Promise<void> => {
+    const result = await syncAccountPositions();
+    if (result.totalFound > 0) {
+      markTokensAsOwned(getAllTrackedTokenIds());
+    }
+  };
+  setInterval(syncAndMarkPositions, config.syncIntervalMs);
 }
 
 main();
