@@ -124,7 +124,6 @@ async function main(): Promise<void> {
     console.log("Risker Targets:", resolvedRiskerTargets.map(t => t.slice(0, 10) + "...").join(", "));
   }
   console.log("Poll interval (ms):", config.pollIntervalMs);
-  console.log("Size multiplier:", config.sizeMultiplier);
   console.log("---");
 
   const totalUsers = config.targetUsers.length + config.whaleUsers.length + config.riskerUsers.length;

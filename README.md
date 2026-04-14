@@ -54,7 +54,6 @@ The bot handles three distinct types of traders, allowing you to diversify your 
 | `COPY_MAX_ORDER_USD` | The absolute maximum dollar amount to bet | `10` |
 | `COPY_DYNAMIC_AMOUNT` | Enables **Logarithmic Scaling** (scales bet between Min and Max) | `true` |
 | `COPY_MAX_PRICE` | Global price cap for **Risker** targets | `0.30` |
-| `COPY_SIZE_MULTIPLIER` | Scales the *target's* size before calculating your bet | `1` |
 | `COPY_POLL_INTERVAL_MS`| Polling speed. 3000ms is fast, 15000ms is safe | `15000` |
 | `COPY_SYNC_INTERVAL_MS`| How often to sync positions (discover new ones). Default 90s | `90000` |
 

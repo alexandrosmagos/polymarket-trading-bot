@@ -55,12 +55,10 @@ export function calculateDynamicSize(
   price: number,
   dynamicAmount: boolean,
   minOrderUsd: number,
-  maxOrderUsd: number | null,
-  sizeMultiplier: number
+  maxOrderUsd: number | null
 ): number {
   if (dynamicAmount && maxOrderUsd != null && maxOrderUsd > 0 && price > 0) {
     const tradeUsd = size * price;
-    const effectiveUsd = tradeUsd * sizeMultiplier;
 
     // Use a logarithmic scale from $100 to $100,000 baseline to determine relative target size
     // Below $100 = minOrderUsd. Above $100k = maxOrderUsd.
@@ -68,8 +66,8 @@ export function calculateDynamicSize(
     const upperBoundLog = Math.log10(100000); // 5
 
     let score = 0;
-    if (effectiveUsd > 100) {
-      score = (Math.log10(effectiveUsd) - lowerBoundLog) / (upperBoundLog - lowerBoundLog);
+    if (tradeUsd > 100) {
+      score = (Math.log10(tradeUsd) - lowerBoundLog) / (upperBoundLog - lowerBoundLog);
     }
     // Clamp between 0 and 1
     score = Math.max(0, Math.min(1, score));
@@ -81,7 +79,7 @@ export function calculateDynamicSize(
   }
 
   // Not dynamic
-  let s = size * sizeMultiplier;
+  let s = size;
   if (maxOrderUsd != null && maxOrderUsd > 0 && price > 0) {
     const notional = s * price;
     if (notional > maxOrderUsd) s = maxOrderUsd / price;
@@ -90,7 +88,7 @@ export function calculateDynamicSize(
 }
 
 export function applySizeLimit(size: number, price: number): number {
-  return calculateDynamicSize(size, price, config.dynamicAmount, config.minOrderUsd, config.maxOrderUsd, config.sizeMultiplier);
+  return calculateDynamicSize(size, price, config.dynamicAmount, config.minOrderUsd, config.maxOrderUsd);
 }
 
 /** sourceUser: the address we fetched this activity for; whaleMinUsd: per-user threshold (null = insider) */
