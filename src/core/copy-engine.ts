@@ -305,8 +305,16 @@ export async function pollAndCopy(): Promise<{
       return false;
     }
 
+    // Add to seenAssets NOW to prevent duplicates within this batch
+    seenAssets.add(tokenId);
+
     const result = await placeMarketOrder(tokenId, "BUY", orderSize, market.tickSize, market.negRisk);
     if (result.error) {
+      // Remove from seenAssets so can retry on next poll (except balance errors which are retryable)
+      const isBalanceError = result.error.includes("not enough balance") || result.error.includes("balance is not enough");
+      if (!isBalanceError) {
+        seenAssets.delete(tokenId);
+      }
       errors.push(`${tokenId} BUY: ${result.error}`);
       if (result.error.includes("not enough balance") || result.error.includes("balance is not enough")) {
         const lastAlert = balanceErrorCooldown.get(tokenId) ?? 0;
@@ -329,7 +337,6 @@ export async function pollAndCopy(): Promise<{
       return false;
     }
 
-    seenAssets.add(tokenId);
     addPosition({
       tokenId,
       sourceUser: a._sourceUser,
